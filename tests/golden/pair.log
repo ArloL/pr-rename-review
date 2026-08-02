@@ -1,0 +1,80 @@
+old files that moved: 242
+canonically paired  : 242
+unresolved olds     : 0
+genuinely new files : 8
+   docs/superpowers/plans/2026-07-31-german-to-english-rename.md
+   docs/superpowers/specs/2026-07-31-german-to-english-rename-design.md
+   src/main/java/de/haegerconsulting/hsp/tender/ai/ScopeKeys.java
+   src/main/resources/db/changelog/changes/2026-07-31-rename-german-identifiers.yaml
+   src/test/java/de/haegerconsulting/hsp/tender/ai/PromptSchemaAgreementTest.java
+   src/test/java/de/haegerconsulting/hsp/tender/ai/PromptTemplateVariablesTest.java
+   src/test/java/de/haegerconsulting/hsp/tender/infrastructure/EventPublicationDrainGateTest.java
+   tools/check-javadoc-links.sh
+collisions          : []
+
+=== git disagrees with the canonical pairing ===
+  git MISPAIRED src/main/java/de/haegerconsulting/hsp/ausschreibung/AusschreibungErstelltEvent.java
+     git  src/main/java/de/haegerconsulting/hsp/tender/TenderClassifiedEvent.java  (45%)
+     true src/main/java/de/haegerconsulting/hsp/tender/TenderCreatedEvent.java
+  git MISPAIRED src/main/java/de/haegerconsulting/hsp/ausschreibung/AusschreibungExtrahiertEvent.java
+     git  src/main/java/de/haegerconsulting/hsp/tender/TenderCreatedEvent.java  (45%)
+     true src/main/java/de/haegerconsulting/hsp/tender/TenderExtractedEvent.java
+  git MISPAIRED src/main/java/de/haegerconsulting/hsp/ausschreibung/AusschreibungKlassifiziertEvent.java
+     git  src/main/java/de/haegerconsulting/hsp/tender/TenderExtractedEvent.java  (44%)
+     true src/main/java/de/haegerconsulting/hsp/tender/TenderClassifiedEvent.java
+  git MISPAIRED src/main/java/de/haegerconsulting/hsp/ausschreibung/ai/browser/package-info.java
+     git  src/main/java/de/haegerconsulting/hsp/tender/graph/package-info.java  (49%)
+     true src/main/java/de/haegerconsulting/hsp/tender/ai/browser/package-info.java
+  git MISPAIRED src/main/java/de/haegerconsulting/hsp/ausschreibung/domain/Auslastung.java
+     git  src/main/java/de/haegerconsulting/hsp/tender/domain/RemoteRatio.java  (39%)
+     true src/main/java/de/haegerconsulting/hsp/tender/domain/UtilizationRate.java
+  git MISPAIRED src/main/java/de/haegerconsulting/hsp/ausschreibung/domain/RemoteAnteil.java
+     git  src/main/java/de/haegerconsulting/hsp/tender/domain/UtilizationRate.java  (38%)
+     true src/main/java/de/haegerconsulting/hsp/tender/domain/RemoteRatio.java
+  git MISPAIRED src/main/java/de/haegerconsulting/hsp/ausschreibung/domain/package-info.java
+     git  src/main/java/de/haegerconsulting/hsp/tender/rest/package-info.java  (50%)
+     true src/main/java/de/haegerconsulting/hsp/tender/domain/package-info.java
+  git MISPAIRED src/main/java/de/haegerconsulting/hsp/ausschreibung/graph/package-info.java
+     git  src/main/java/de/haegerconsulting/hsp/tender/ai/browser/package-info.java  (51%)
+     true src/main/java/de/haegerconsulting/hsp/tender/graph/package-info.java
+  git UNPAIRED  src/main/java/de/haegerconsulting/hsp/ausschreibung/infrastructure/security/package-info.java
+             -> src/main/java/de/haegerconsulting/hsp/tender/infrastructure/security/package-info.java
+  git MISPAIRED src/main/java/de/haegerconsulting/hsp/ausschreibung/rest/package-info.java
+     git  src/main/java/de/haegerconsulting/hsp/tender/domain/package-info.java  (51%)
+     true src/main/java/de/haegerconsulting/hsp/tender/rest/package-info.java
+  git MISPAIRED src/test/resources/evals/Ausschreibung/ExpectedOutput/Projekt/AusschreibungEval5.json
+     git  src/test/resources/evals/Tender/ExpectedOutput/ContactData/TenderEval1.json  (100%)
+     true src/test/resources/evals/Tender/ExpectedOutput/ProjectData/TenderEval5.json
+  git MISPAIRED src/test/resources/evals/Ausschreibung/ExpectedOutput/Skills/AusschreibungEval1.json
+     git  src/test/resources/evals/Tender/ExpectedOutput/ContactData/TenderEval2.json  (100%)
+     true src/test/resources/evals/Tender/ExpectedOutput/Skills/TenderEval1.json
+  git MISPAIRED src/test/resources/evals/Ausschreibung/ExpectedOutput/Skills/AusschreibungEval2.json
+     git  src/test/resources/evals/Tender/ExpectedOutput/ContactData/TenderEval3.json  (100%)
+     true src/test/resources/evals/Tender/ExpectedOutput/Skills/TenderEval2.json
+  git MISPAIRED src/test/resources/evals/Ausschreibung/ExpectedOutput/Skills/AusschreibungEval3.json
+     git  src/test/resources/evals/Tender/ExpectedOutput/ContactData/TenderEval4.json  (100%)
+     true src/test/resources/evals/Tender/ExpectedOutput/Skills/TenderEval3.json
+  git MISPAIRED src/test/resources/evals/Ausschreibung/ExpectedOutput/Skills/AusschreibungEval4.json
+     git  src/test/resources/evals/Tender/ExpectedOutput/ContactData/TenderEval5.json  (100%)
+     true src/test/resources/evals/Tender/ExpectedOutput/Skills/TenderEval4.json
+  git MISPAIRED src/test/resources/evals/Ausschreibung/ExpectedOutput/Skills/AusschreibungEval5.json
+     git  src/test/resources/evals/Tender/ExpectedOutput/ProjectData/TenderEval5.json  (100%)
+     true src/test/resources/evals/Tender/ExpectedOutput/Skills/TenderEval5.json
+  git MISPAIRED src/test/resources/evals/Ausschreibung/ExpectedOutput/Vermittler/AusschreibungEval1.json
+     git  src/test/resources/evals/Tender/ExpectedOutput/Skills/TenderEval1.json  (100%)
+     true src/test/resources/evals/Tender/ExpectedOutput/ContactData/TenderEval1.json
+  git MISPAIRED src/test/resources/evals/Ausschreibung/ExpectedOutput/Vermittler/AusschreibungEval2.json
+     git  src/test/resources/evals/Tender/ExpectedOutput/Skills/TenderEval2.json  (100%)
+     true src/test/resources/evals/Tender/ExpectedOutput/ContactData/TenderEval2.json
+  git MISPAIRED src/test/resources/evals/Ausschreibung/ExpectedOutput/Vermittler/AusschreibungEval3.json
+     git  src/test/resources/evals/Tender/ExpectedOutput/Skills/TenderEval3.json  (100%)
+     true src/test/resources/evals/Tender/ExpectedOutput/ContactData/TenderEval3.json
+  git MISPAIRED src/test/resources/evals/Ausschreibung/ExpectedOutput/Vermittler/AusschreibungEval4.json
+     git  src/test/resources/evals/Tender/ExpectedOutput/Skills/TenderEval4.json  (100%)
+     true src/test/resources/evals/Tender/ExpectedOutput/ContactData/TenderEval4.json
+  git MISPAIRED src/test/resources/evals/Ausschreibung/ExpectedOutput/Vermittler/AusschreibungEval5.json
+     git  src/test/resources/evals/Tender/ExpectedOutput/Skills/TenderEval5.json  (100%)
+     true src/test/resources/evals/Tender/ExpectedOutput/ContactData/TenderEval5.json
+total disagreements: 21
+
+wrote /Users/arlookeeffe/Developer/pr-rename-review/build/canonical-pairs.tsv

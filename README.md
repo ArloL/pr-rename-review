@@ -36,10 +36,16 @@ disagreements — the most useful single output — are in `build/pair.log`.
 
 ## Known baseline
 
-Against `BASE=52efff3 HEAD_REF=origin/refactor/german-to-english-rename`
-(PR #252): 242 renames, 24 pairing disagreements, 63 reviewable pairs,
-5,189 → 1,489 residual tokens, 181 frozen, 23 files cancelling to zero,
-745 KB page. Treat these as the regression baseline.
+Against the **pinned** `BASE=52efff3 HEAD_REF=1ce7bfa` (PR #252): 242 renames,
+21 pairing disagreements, 62 reviewable pairs plus 11 identical-blob shuffles,
+5,187 → 1,489 residual tokens, 181 frozen, 22 files cancelling to zero,
+744 KB page. `uv run pytest` asserts these, given `REPO`.
+
+Pin the head ref to a commit. `origin/refactor/german-to-english-rename` moves,
+and an earlier README recorded 24 disagreements / 63 pairs / 5,189 tokens / 23
+clean against a state of the branch that no longer exists. Re-baselining is a
+deliberate act: point `tests/conftest.py` at the new commit and re-capture
+`tests/golden/`.
 
 ## What is hardcoded
 

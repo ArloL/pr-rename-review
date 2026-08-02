@@ -13,6 +13,7 @@
 - **Runtime code is stdlib only.** `pytest` is a dev dependency; nothing else is added. This is a decision from the proposal and is not up for renegotiation mid-plan.
 - **Python 3.11+** is required (`tomllib`). Pin `requires-python = ">=3.11"`.
 - **The replay is the gate.** Tasks 2–6 must leave `build/diffdata2.json` byte-identical to the golden fixture captured in Task 1. Any difference is a transcription bug, not an improvement.
+- **The baseline ref is pinned to `1ce7bfa`**, never `origin/refactor/german-to-english-rename`. That ref moves, and the proposal's original figures (24 disagreements, 63 pairs, 5,189 → 1,489, 23 clean) were measured against an older state of it and do not reproduce. The pinned figures are: 242 renames, 21 disagreements, 62 reviewable pairs, 11 identical-blob shuffles, 5,187 → 1,489 tokens, 181 frozen, 22 cancelling to zero.
 - **Never pass a pathspec** to a rename-detecting `git diff`. Filtering by the new path silently disables rename detection because the old path stops matching. `tests/test_no_pathspec.py` enforces this.
 - **`-l50000` is required** on every rename-detecting `git diff`. Git's default rename limit is far below a repo-wide rename.
 - **Do not pipe the passes into `head`.** They die on SIGPIPE mid-write and leave a truncated output file.
@@ -102,13 +103,14 @@ grep --extended-regexp "total disagreements" build/pair.log
 Expected, from the spec's acceptance criterion — **stop and investigate if any
 differ**, because the fixture would then freeze the wrong answer:
 
-| Check | Expected |
+| Check | Expected at `52efff3...1ce7bfa` |
 |---|---|
-| reviewable pairs (`pairs2.tsv` lines) | 63 |
-| pairing disagreements | 24 |
-| residual tokens | 5,189 → 1,489 |
+| renames total | 242 |
+| reviewable pairs | 62 (+ 11 identical-blob shuffles) |
+| pairing disagreements | 21 |
+| residual tokens | 5,187 → 1,489 |
 | frozen | 181 |
-| cancel to zero | 23 |
+| cancel to zero | 22 |
 
 - [ ] **Step 5: Write the replay test**
 
@@ -1993,9 +1995,11 @@ Replace the prototype README. It must state:
 - the three caveats worth keeping from the current README: never pass a
   pathspec to a rename-detecting diff, `-l50000` is required, do not pipe the
   passes into `head`
-- the regression baseline: 242 renames, 24 disagreements, 63 pairs,
-  5,189 → 1,489 tokens, 181 frozen, 23 cancelling to zero, and that
-  `uv run pytest` checks it given `REPO`
+- the regression baseline, pinned at `52efff3...1ce7bfa`: 242 renames, 21
+  disagreements, 62 pairs, 5,187 → 1,489 tokens, 181 frozen, 22 cancelling to
+  zero, and that `uv run pytest` checks it given `REPO`
+- that the baseline ref is pinned deliberately, and re-baselining is a
+  conscious act: point `conftest.py` at the new commit and re-capture
 
 - [ ] **Step 4: Mark the spec implemented**
 

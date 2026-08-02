@@ -215,15 +215,23 @@ marks viewed and jumps to the next file, `J`/`K` step. That flow is what makes
 
 ## Verification
 
-The acceptance criterion is a replay, because the answer is already
-established by hand. Config extraction is a pure refactor, so any difference
-in output is a transcription bug:
+The acceptance criterion is a replay. Config extraction is a pure refactor, so
+any difference in output is a transcription bug:
 
-> Run against `BASE=52efff3 HEAD_REF=origin/refactor/german-to-english-rename`
-> with the glossary supplied by `.pr-rename-review.toml` and reproduce the
-> prototype's output exactly: 242 renames, 24 pairing disagreements, 63
-> reviewable pairs, 5,189 → 1,489 residual tokens, 181 frozen, 23 files
-> cancelling to zero.
+> Run against the pinned baseline `BASE=52efff3 HEAD_REF=1ce7bfa` with the
+> glossary supplied by `.pr-rename-review.toml` and reproduce the prototype's
+> output exactly: 242 renames, 21 pairing disagreements, 62 reviewable pairs
+> plus 11 identical-blob shuffles, 5,187 → 1,489 residual tokens, 181 frozen,
+> 22 files cancelling to zero.
+
+**The head ref must be pinned to a commit, never to
+`origin/refactor/german-to-english-rename`.** That ref moves. The figures
+originally recorded in the proposal — 24 disagreements, 63 pairs, 5,189
+tokens, 23 clean — were measured against an earlier state of the branch and do
+not reproduce at any current commit; the difference is three eval fixtures
+whose content changed enough that git's similarity pairing now agrees with the
+name-derived pairing. The prototype was never wrong. A moving ref as a
+regression baseline was.
 
 Diffing `build/diffdata2.json` before and after the extraction is the
 mechanical form of this test and catches a mistranscribed entry precisely.
