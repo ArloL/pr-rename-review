@@ -25,3 +25,12 @@ def test_pr_url_without_a_pr_number_returns_none():
 
 def test_pr_url_without_a_resolved_repo_returns_none():
     assert pr_url(cfg(), None, None, "src/Foo.java") is None
+
+
+def test_appending_a_line_to_the_file_url_gives_the_line_url():
+    """The page builds line links in JavaScript as `${f.gh}R${n}` rather than
+    carrying 1,489 precomputed URLs in the payload. That only works while the
+    file URL ends with the anchor, which this pins down."""
+    file_url = pr_url(cfg(), "haeger", "hsp", "src/Foo.java")
+    line_url = pr_url(cfg(), "haeger", "hsp", "src/Foo.java", 12)
+    assert f"{file_url}R12" == line_url

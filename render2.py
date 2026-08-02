@@ -229,6 +229,12 @@ tr.gap td{background:var(--ground);color:var(--ink-3);text-align:center;font-siz
 .syncst.warn{color:var(--warn);font-weight:600}
 .ghlink{margin-left:6px;color:var(--ink-3);text-decoration:none;font-size:12px}
 .ghlink:hover{color:var(--accent)}
+a.btn.ghost{text-decoration:none;display:inline-block}
+/* Gutter line numbers double as "comment on this line in GitHub" links. They
+   must not read as links until hovered, or 1,489 changed lines turn blue. */
+td.gut a{color:inherit;text-decoration:none}
+td.gut a:hover{color:var(--accent);text-decoration:underline}
+td.gut a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 #unk{margin-top:24px}
 #unk ul{margin:8px 0 0 18px;font-family:var(--mono);font-size:12px}
 """
@@ -404,8 +410,14 @@ function drawPane(){{
   const body=rows.map(r=>{{
     if(r[0]==='gap')return '<tr class="gap"><td colspan="4">···</td></tr>';
     const ln=r[1]==null?'':r[1], rn=r[2]==null?'':r[2];
+    // The new-side line number links to that line in GitHub's diff. f.gh
+    // already ends with the file anchor, so R<n> targets the right side.
+    const rcell=(f.gh&&rn)
+      ? `<a href="${{f.gh}}R${{rn}}" target="_blank" rel="noopener"
+           title="Comment on line ${{rn}} in GitHub">${{rn}}</a>`
+      : rn;
     return `<tr class="${{r[0]}}"><td class="gut">${{ln}}</td><td class="l">${{r[3]||'&nbsp;'}}</td>`+
-           `<td class="gut">${{rn}}</td><td class="r">${{r[4]||'&nbsp;'}}</td></tr>`;
+           `<td class="gut">${{rcell}}</td><td class="r">${{r[4]||'&nbsp;'}}</td></tr>`;
   }}).join('');
   const how=f.kind==='mispaired'
     ? `<div class="flag"><b>GitHub shows this file paired to the wrong partner.</b> It renders
@@ -427,7 +439,8 @@ function drawPane(){{
       <div class="acts">
         <button class="btn" id="mv">${{isDone(f)?'Next unviewed':'Mark viewed &amp; next'}}</button>
         ${{isDone(f)?'<button class="btn ghost" id="unmv">Unmark</button>':''}}
-        <span class="kbd">V marks viewed · J / K step through files</span>
+        ${{f.gh?`<a class="btn ghost" href="${{f.gh}}" target="_blank" rel="noopener">Open in GitHub ↗</a>`:''}}
+        <span class="kbd">V marks viewed · J / K step through files · click a right-hand line number to comment on it</span>
       </div>
     </div>
     <div class="wrap"><table class="diff"><colgroup><col class="g"><col><col class="g"><col></colgroup><tbody>${{body}}</tbody></table></div>`;
