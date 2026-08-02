@@ -1,7 +1,15 @@
 # pr-rename-review v1 — implementation spec
 
 - Date: 2026-08-02
-- Status: approved
+- Status: implemented
+- Round-trip verified 2026-08-02 against PR #252 on
+  `src/main/java/de/haegerconsulting/hsp/tender/ai/TenderAgentConfiguration.java`,
+  a file GitHub renders as an unrelated delete plus add: marking it through the
+  tool moved GitHub's `viewerViewedState` from `UNVIEWED` to `VIEWED`, and
+  unmarking restored it. That is the claim the localhost server exists to
+  support, on the file class the design reasoned about rather than observed.
+  Verified through the API field GitHub's PR UI renders, not by inspecting the
+  UI itself.
 - Supersedes parts of `2026-08-02-pr-rename-review-tool-design.md`; see
   "Revisions to the proposal" below. That document remains the record of the
   problem and the prior-art survey, and is not restated here.
