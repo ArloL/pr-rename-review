@@ -1,0 +1,237 @@
+# Vocabulary for the German-to-English rename on PR #252.
+#
+# Data only -- the normalization and pairing logic lives in glossary.py and
+# pairup.py. Generated from the prototype's hardcoded tables; every entry is
+# a row of 2026-07-31-german-to-english-rename-design.md's Glossary, Java
+# renames or Database renames tables, or a case variant of one.
+
+[repo]
+base = "52efff3"
+# Pinned to a commit, not to origin/refactor/german-to-english-rename. That
+# ref moves, and a moving baseline silently changes every measured number.
+# Bump this deliberately when you want to review a newer state of the branch.
+head = "1ce7bfa"
+pr = 252
+
+[pairing]
+# Applied to directory segments before the basename rules.
+path_rules = [["/ausschreibung", "/tender"]]
+
+# ORDER IS SIGNIFICANT. These are applied as a sequence of str.replace calls,
+# so the plural must precede the singular or it never matches. Do not sort.
+
+words = [
+  ["AusschreibungDuplikatId", "TenderDuplicateId"],
+  ["AusschreibungDuplikate", "TenderDuplicate"],
+  ["AusschreibungDuplikat", "TenderDuplicate"],
+  ["Ausschreibungen", "Tenders"],
+  ["Ausschreibung", "Tender"],
+  ["Duplikate", "Duplicate"],
+  ["Duplikat", "Duplicate"],
+  ["Kunden", "Client"],
+  ["Kunde", "Client"],
+  ["Vermittler", "Contact"],
+  ["BearbeitungsStatus", "ProcessingStatus"],
+  ["Bearbeiter", "Assignee"],
+  ["Klassifikation", "Classification"],
+]
+
+# Non-mechanical basename renames: semantic, not word-for-word. An entry here
+# wins outright over the word list rather than being applied on top of it.
+
+[pairing.basenames]
+"AusschreibungAnalysierenService.java" = "TenderAnalysisService.java"
+"AusschreibungAnalysierenAgent.java" = "AnalyzeTenderAgent.java"
+"AusschreibungVerarbeitenAgent.java" = "ProcessTenderAgent.java"
+"DuplikateErkennenService.java" = "DuplicateDetectionService.java"
+"KundenBestGuessService.java" = "ClientBestGuessService.java"
+"KundenMemoryLearningService.java" = "ClientMemoryLearningService.java"
+"AusschreibungDaten.java" = "TenderData.java"
+"AusschreibungErstelltEvent.java" = "TenderCreatedEvent.java"
+"AusschreibungKlassifiziertEvent.java" = "TenderClassifiedEvent.java"
+"AusschreibungExtrahiertEvent.java" = "TenderExtractedEvent.java"
+"AusschreibungKlassifikationKorrigiertEvent.java" = "TenderClassificationCorrectedEvent.java"
+"AusschreibungKundeAktualisiertEvent.java" = "TenderClientUpdatedEvent.java"
+"Auslastung.java" = "UtilizationRate.java"
+"RemoteAnteil.java" = "RemoteRatio.java"
+"Einsatzort.java" = "Location.java"
+"Branche.java" = "Industry.java"
+"Quelle.java" = "Source.java"
+"Klassifikation.java" = "Classification.java"
+"Vermittler.java" = "Contact.java"
+"Kunde.java" = "Client.java"
+"EmailKategorisierung.java" = "EmailCategorization.java"
+"MoveMailToBearbeitetAgent.java" = "MoveMailToProcessedAgent.java"
+"UnbekannterBearbeiterException.java" = "UnknownAssigneeException.java"
+"DuplikatUebersicht.java" = "DuplicateOverview.java"
+"DuplikatGruppe.java" = "DuplicateGroup.java"
+"BestGuessErgebnis.java" = "BestGuessResult.java"
+"Lektion.java" = "Lesson.java"
+"Zuordnungsregel.java" = "MatchingRule.java"
+
+# Eval fixture directories were renamed too, and not word-for-word. Scoped,
+# because `Projekt -> ProjectData` is right for a fixture directory and wrong
+# everywhere else -- applying it globally would produce confident nonsense.
+[pairing.dir_segments]
+scope = "/evals/"
+
+[pairing.dir_segments.segments]
+Projekt = "ProjectData"
+Vermittler = "ContactData"
+AusschreibungAuslesen = "ReadTender"
+EmailKategorisieren = "CategorizeEmail"
+BeschreibungExtrahieren = "ExtractDescription"
+ProjektdatenExtrahieren = "ExtractProjectData"
+Ausschreibung = "Tender"
+
+[glossary]
+# Unordered: glossary.py sorts these longest-source-first when it compiles
+# them, which is what stops `Ausschreibung` firing inside
+# `AusschreibungDuplikatRepository`. The sort is stable, so equal-length keys
+# keep table precedence: classes, then words, then columns.
+
+[glossary.classes]
+AusschreibungDuplikatRepository = "TenderDuplicateRepository"
+AusschreibungDuplikateService = "TenderDuplicateService"
+AusschreibungDuplikatId = "TenderDuplicateId"
+AusschreibungDuplikat = "TenderDuplicate"
+AusschreibungQueryRepository = "TenderQueryRepository"
+AusschreibungRepository = "TenderRepository"
+AusschreibungQuery = "TenderQuery"
+AusschreibungServiceImpl = "TenderServiceImpl"
+AusschreibungService = "TenderService"
+AusschreibungFacetCounts = "TenderFacetCounts"
+AusschreibungNotFoundException = "TenderNotFoundException"
+DuplikatGruppe = "DuplicateGroup"
+DuplikatUebersicht = "DuplicateOverview"
+KundenMemoriesRepository = "ClientMemoriesRepository"
+KundenMemory = "ClientMemory"
+BearbeiterFilter = "AssigneeFilter"
+UnbekannterBearbeiterException = "UnknownAssigneeException"
+ArchivierungScheduler = "ArchivingScheduler"
+AusschreibungErstelltEvent = "TenderCreatedEvent"
+AusschreibungExtrahiertEvent = "TenderExtractedEvent"
+AusschreibungKlassifiziertEvent = "TenderClassifiedEvent"
+AusschreibungKlassifikationKorrigiertEvent = "TenderClassificationCorrectedEvent"
+AusschreibungKundeAktualisiertEvent = "TenderClientUpdatedEvent"
+AusschreibungAgentConfiguration = "TenderAgentConfiguration"
+AusschreibungAnalysierenAgent = "AnalyzeTenderAgent"
+AusschreibungAnalysierenService = "TenderAnalysisService"
+AusschreibungVerarbeitenAgent = "ProcessTenderAgent"
+AusschreibungDaten = "TenderData"
+ProjektdatenExtrahierenAgent = "ExtractProjectDataAgent"
+SkillsExtrahierenAgent = "ExtractSkillsAgent"
+VermittlerdatenExtrahierenAgent = "ExtractContactDataAgent"
+DatenExtrahierenAgent = "ExtractDataAgent"
+DuplikateErkennenService = "DuplicateDetectionService"
+KundenBestGuessAgent = "ClientBestGuessAgent"
+KundenBestGuessService = "ClientBestGuessService"
+KundenMemoryAgent = "ClientMemoryAgent"
+KundenMemoryLearningService = "ClientMemoryLearningService"
+LookupKundenMemoryTool = "LookupClientMemoryTool"
+AusschreibungAuslesenAgent = "ReadTenderAgent"
+FreelancermapAuslesenAgent = "ReadFreelancermapTendersAgent"
+AusschreibungMail = "TenderMail"
+EmailKategorisierenAgent = "CategorizeEmailAgent"
+EmailKategorisierung = "EmailCategorization"
+LinkBesuchenAgent = "VisitLinkAgent"
+ZusammenfassungErstellenAgent = "CreateSummaryAgent"
+MoveMailToBearbeitetAgent = "MoveMailToProcessedAgent"
+BestGuessErgebnis = "BestGuessResult"
+
+# `ort` alone is only ever a DB column, so it lives in [glossary.columns];
+# adding a PascalCase `Ort` here would rewrite German prompt prose and invent
+# diffs.
+
+[glossary.words]
+Ausschreibungen = "Tenders"
+Ausschreibung = "Tender"
+Vermittlerdaten = "ContactData"
+VermittlerDaten = "ContactData"
+Vermittler = "Contact"
+Projektdaten = "ProjectData"
+ProjektDaten = "ProjectData"
+Kunden = "Client"
+Kunde = "Client"
+BearbeitungsStatus = "ProcessingStatus"
+Bearbeiter = "Assignee"
+Klassifikation = "Classification"
+Duplikate = "Duplicates"
+Duplikat = "Duplicate"
+Hauptausschreibung = "MainTender"
+HauptAusschreibung = "MainTender"
+Quelle = "Source"
+Branche = "Industry"
+Auslastung = "UtilizationRate"
+Wochenstunden = "UtilizationRate"
+RemoteAnteil = "RemoteRatio"
+Einsatzort = "Location"
+Veroeffentlichungsdatum = "PublicationDate"
+Zusammenfassung = "Summary"
+Titel = "Title"
+Lektion = "Lesson"
+Zuordnungsregel = "MatchingRule"
+Begruendung = "Reason"
+Grund = "Reason"
+Erstellt = "Created"
+Extrahiert = "Extracted"
+Klassifiziert = "Classified"
+ErstelltAm = "CreatedAt"
+ArchiviertAm = "ArchivedAt"
+Archivierung = "Archiving"
+Archiviert = "Archived"
+Daten = "Data"
+Skills = "Skills"
+
+[glossary.columns]
+ausschreibung_duplikat = "tender_duplicate"
+ausschreibung_embeddings = "tender_embeddings"
+ausschreibung_skill = "tender_skill"
+ausschreibung_id = "tender_id"
+ausschreibung = "tender"
+vermittler = "contact"
+kunden_memory = "client_memory"
+titel = "title"
+zusammenfassung = "summary"
+start_datum = "start_date"
+end_datum = "end_date"
+wochenstunden = "utilization_rate"
+ort = "location"
+klassifikations_grund = "classification_reason"
+klassifikation = "classification"
+remote_anteil = "remote_ratio"
+veroeffentlichungsdatum = "publication_date"
+kunden_begruendung = "client_reason"
+kunde = "client"
+branche = "industry"
+bearbeitungs_status = "processing_status"
+bearbeitungs_begruendung = "processing_reason"
+bearbeiter_identity_id = "assignee_identity_id"
+quelle_urspruengliche_klassifikation = "source_original_classification"
+quelle_neue_klassifikation = "source_new_classification"
+quelle_ausschreibung_id = "source_tender_id"
+quelle_benutzer_grund = "source_user_reason"
+quelle = "source"
+vermutete_kunden_begruendung = "suspected_client_reason"
+vermuteter_kunde = "suspected_client"
+erstellt_am = "created_at"
+aktiv_seit = "active_since"
+archiviert_am = "archived_at"
+archiviert_von = "archived_by"
+archiviert = "archived"
+such_vektor = "search_vector"
+duplikat_id = "duplicate_id"
+vorname = "first_name"
+nachname = "last_name"
+telefonnummer = "phone_number"
+firma = "company"
+email_adresse = "email_address"
+lektion = "lesson"
+zuordnungsregel = "matching_rule"
+"duplikat.threshold" = "duplicate.threshold"
+"archivierung.cron" = "archiving-schedule.cron"
+
+[glossary.rules]
+# Ordered regex pass, applied before the identifier mapping. Empty for
+# PR #252: the word tables cover it. Present so the shape is documented.
+patterns = []
