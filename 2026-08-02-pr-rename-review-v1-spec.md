@@ -99,9 +99,19 @@ classes = { AusschreibungRepository = "TenderRepository" }
 words   = { Ausschreibung = "Tender" }
 columns = { ausschreibung_id = "tender_id" }
 
+[glossary.parts]        # component-only: fires inside compounds, never alone
+haupt = "Main"
+
 [glossary.rules]        # ordered regex pass, applied before identifier mapping
 patterns = [["\\bausschreibungen\\b", "tenders"]]
 ```
+
+`[glossary.parts]` exists because the prototype seeds its component table with
+one entry that is in none of the three data tables. `Hauptausschreibung →
+mainTender` is a glossary row, so `haupt` must fire inside
+`hauptAusschreibungId`; but a bare `haupt` in German prompt prose is not a
+rename, so it must not become a whole-word rule. Words and classes outrank
+this table, and simple columns fill in behind it.
 
 `dir_segments` is scoped rather than global because it is not general
 vocabulary: `Projekt → ProjectData` is correct for an eval fixture directory

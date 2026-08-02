@@ -28,6 +28,10 @@ class GlossaryTables:
     classes: dict[str, str] = field(default_factory=dict)
     words: dict[str, str] = field(default_factory=dict)
     columns: dict[str, str] = field(default_factory=dict)
+    # Component-only vocabulary: fires inside compound identifiers but never
+    # as a whole word. `haupt` belongs here because `Hauptausschreibung` is a
+    # glossary row but a bare `haupt` in German prose is not a rename.
+    parts: dict[str, str] = field(default_factory=dict)
     patterns: list[tuple[str, str]] = field(default_factory=list)
 
 
@@ -81,6 +85,7 @@ def load_config(path=None):
         classes=dict(g.get("classes", {})),
         words=dict(g.get("words", {})),
         columns=dict(g.get("columns", {})),
+        parts=dict(g.get("parts", {})),
         patterns=_pairs(g.get("rules", {}).get("patterns", []),
                         "glossary.rules.patterns"),
     )

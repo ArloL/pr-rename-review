@@ -231,6 +231,13 @@ zuordnungsregel = "matching_rule"
 "duplikat.threshold" = "duplicate.threshold"
 "archivierung.cron" = "archiving-schedule.cron"
 
+[glossary.parts]
+# Component-only: fires inside compound identifiers, never as a whole word.
+# The design doc's `Hauptausschreibung -> mainTender` row, decomposed so it
+# also fires in `hauptAusschreibungId` and friends. A bare `haupt` in German
+# prompt prose is not a rename, which is why this is not in [glossary.words].
+haupt = "Main"
+
 [glossary.rules]
 # Ordered regex pass, applied before the identifier mapping. Empty for
 # PR #252: the word tables cover it. Present so the shape is documented.

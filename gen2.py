@@ -3,9 +3,12 @@
 import subprocess, difflib, re, json, html, os, pathlib, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-from glossary import normalize
+from config import load_config
+from glossary import build_glossary
 
 S = pathlib.Path(__file__).parent
+CFG = load_config(S / ".pr-rename-review.toml")
+normalize = build_glossary(CFG.glossary).normalize
 OUT = pathlib.Path(os.environ.get("OUT") or (pathlib.Path(__file__).parent / "build"))
 OUT.mkdir(parents=True, exist_ok=True)
 REPO = os.environ.get("REPO") or subprocess.run(
@@ -119,10 +122,6 @@ def build(old_text, new_text, normalized=False):
     return rows, changed, wordtok, phantoms
 
 
-# optional: paths already reviewed elsewhere, one "old<TAB>new" pair per line
-PREV = set()
-if (OUT / "pairs.tsv").exists():
-    PREV = {l.split("\t")[1].strip() for l in open(OUT / "pairs.tsv") if "\t" in l}
 scope = json.load(open(OUT / "scope.json"))
 
 files = []
@@ -140,7 +139,10 @@ for r in scope:
         old=old, new=new, oldname=old.split("/")[-1], newname=new.split("/")[-1],
         oldpkg="/".join(old.split("/")[:-1]), newpkg="/".join(new.split("/")[:-1]),
         sim=r["sim"], kind=r["kind"], gh_target=r["gh_target"], gh_score=r["gh_score"],
-        area=area, prev=new in PREV,
+        # `prev` marked files reviewed elsewhere, fed by a pairs.tsv no pass
+        # has written since the prototype was split. Always false; the key
+        # stays because render2.py still reads it.
+        area=area, prev=False,
         raw=raw_rows, nrm=nrm_rows, raw_c=raw_c, nrm_c=nrm_c,
         raw_w=raw_w, nrm_w=nrm_w, nrm_ph=nrm_ph, lines=len(n.splitlines())))
 
