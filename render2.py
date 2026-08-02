@@ -1,0 +1,377 @@
+import json, os, pathlib
+
+S = pathlib.Path(__file__).parent
+OUT = pathlib.Path(os.environ.get("OUT") or (pathlib.Path(__file__).parent / "build"))
+OUT.mkdir(parents=True, exist_ok=True)
+blob = json.loads((OUT / "diffdata2.json").read_text())
+files, empties = blob["files"], blob["empties"]
+
+PFX = [("src/main/java/de/haegerconsulting/hsp/", "main·"),
+       ("src/test/java/de/haegerconsulting/hsp/", "test·"),
+       ("src/test/resources/", "res·"),
+       ("src/main/resources/", "res·")]
+
+
+def short(p):
+    for a, b in PFX:
+        if p.startswith(a):
+            return b + p[len(a):]
+    return p
+
+
+compact = []
+for f in files:
+    compact.append({
+        "id": f["new"], "on": f["oldname"], "nn": f["newname"],
+        "op": short(f["oldpkg"]), "np": short(f["newpkg"]),
+        "sim": f["sim"], "kind": f["kind"],
+        "ght": short(f["gh_target"] or "") if f["gh_target"] else None,
+        "ghs": f["gh_score"], "area": f["area"], "prev": f["prev"],
+        "rc": f["raw_c"], "nc": f["nrm_c"], "rw": f["raw_w"], "nw": f["nrm_w"],
+        "ph": f["nrm_ph"], "L": f["lines"],
+        "R": [[r[0], r[1], r[2], r[3], r[4]] for r in f["raw"]],
+        "N": [[r[0], r[1], r[2], r[3], r[4]] for r in f["nrm"]]})
+
+def evalshort(p):
+    return p.replace("src/test/resources/evals/", "").replace("ExpectedOutput/", "")
+
+
+EMP = [{"o": evalshort(e["old"]), "n": evalshort(e["new"]),
+        "g": evalshort(e["gh_target"] or "")} for e in empties]
+
+DATA = json.dumps(compact, separators=(",", ":"))
+EDATA = json.dumps(EMP, separators=(",", ":"))
+maxw = max(c["nw"] for c in compact) or 1
+n_clean = sum(1 for c in compact if c["nw"] == 0)
+n_wrong = sum(1 for c in compact if c["kind"] == "mispaired")
+n_prev = sum(1 for c in compact if c["prev"])
+tot_raw = sum(c["rw"] for c in compact)
+tot_nrm = sum(c["nw"] for c in compact)
+tot_ph = sum(c["ph"] for c in compact)
+
+CSS = """
+:root{
+  --ground:#FAFAFC; --surface:#FFFFFF; --ink:#171A22; --ink-2:#5A6072; --ink-3:#8A90A2;
+  --rule:#E3E5ED; --accent:#4C4FD4; --accent-soft:#EDEDFA;
+  --del-bg:#FDEAEF; --del-mark:#F6BFCC; --del-ink:#96203E;
+  --add-bg:#E7F4EB; --add-mark:#ABE2BD; --add-ink:#1A6335;
+  --froz-mark:#F0E2C8; --froz-ink:#77551A;
+  --warn:#B4571B; --warn-soft:#FBEEE3;
+  --mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+  --ground:#0F1116; --surface:#161923; --ink:#E6E8F0; --ink-2:#979DB2; --ink-3:#6E7488;
+  --rule:#252A37; --accent:#9294F7; --accent-soft:#1D1F31;
+  --del-bg:#33191F; --del-mark:#5D2333; --del-ink:#F2A8BA;
+  --add-bg:#12291C; --add-mark:#1E5233; --add-ink:#8AD8A5;
+  --froz-mark:#3A2F16; --froz-ink:#DCC183;
+  --warn:#E39152; --warn-soft:#2C1E12;
+}}
+:root[data-theme="dark"]{
+  --ground:#0F1116; --surface:#161923; --ink:#E6E8F0; --ink-2:#979DB2; --ink-3:#6E7488;
+  --rule:#252A37; --accent:#9294F7; --accent-soft:#1D1F31;
+  --del-bg:#33191F; --del-mark:#5D2333; --del-ink:#F2A8BA;
+  --add-bg:#12291C; --add-mark:#1E5233; --add-ink:#8AD8A5;
+  --froz-mark:#3A2F16; --froz-ink:#DCC183;
+  --warn:#E39152; --warn-soft:#2C1E12;
+}
+:root[data-theme="light"]{
+  --ground:#FAFAFC; --surface:#FFFFFF; --ink:#171A22; --ink-2:#5A6072; --ink-3:#8A90A2;
+  --rule:#E3E5ED; --accent:#4C4FD4; --accent-soft:#EDEDFA;
+  --del-bg:#FDEAEF; --del-mark:#F6BFCC; --del-ink:#96203E;
+  --add-bg:#E7F4EB; --add-mark:#ABE2BD; --add-ink:#1A6335;
+  --froz-mark:#F0E2C8; --froz-ink:#77551A;
+  --warn:#B4571B; --warn-soft:#FBEEE3;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--mono);
+     font-size:13px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.masthead{border-bottom:1px solid var(--rule);background:var(--surface);padding:22px 26px 18px}
+.masthead h1{margin:0;font-size:15px;font-weight:650;letter-spacing:-.01em;text-wrap:balance}
+.sub{margin:5px 0 0;font-size:11.5px;color:var(--ink-3);letter-spacing:.02em}
+.note{font-family:var(--sans);font-size:12.5px;line-height:1.62;color:var(--ink-2);
+      max-width:70ch;margin:14px 0 0}
+.note b{color:var(--ink);font-weight:600}
+.note code{font-family:var(--mono);font-size:11.5px;background:var(--accent-soft);
+      color:var(--accent);padding:1px 5px;border-radius:3px}
+.tally{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));margin:16px 0 0;
+      border:1px solid var(--rule);border-radius:7px;overflow:hidden;max-width:70ch}
+.tally div{padding:9px 14px;border-right:1px solid var(--rule);min-width:0;
+      display:flex;flex-direction:column;justify-content:space-between;gap:4px}
+.tally div:last-child{border-right:0}
+@media (max-width:720px){.tally{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tally div{border-bottom:1px solid var(--rule)}}
+.tally .k{font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);
+      line-height:1.35}
+.tally .v{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+.bar{display:flex;flex-wrap:wrap;gap:16px;align-items:center;padding:11px 26px;
+     border-bottom:1px solid var(--rule);background:var(--surface);position:sticky;top:0;z-index:5}
+.seg{display:flex;border:1px solid var(--rule);border-radius:6px;overflow:hidden}
+.seg button{font:inherit;font-size:11.5px;padding:5px 13px;background:transparent;color:var(--ink-2);
+     border:0;cursor:pointer;letter-spacing:.01em}
+.seg button+button{border-left:1px solid var(--rule)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11px;color:var(--ink-3);letter-spacing:.03em}
+.legend i{font-style:normal;padding:1px 6px;border-radius:3px}
+.legend .d{background:var(--del-mark);color:var(--del-ink)}
+.legend .a{background:var(--add-mark);color:var(--add-ink)}
+.legend .f{background:var(--froz-mark);color:var(--froz-ink)}
+.console{display:grid;grid-template-columns:290px minmax(0,1fr);min-height:calc(100vh - 240px)}
+.index{border-right:1px solid var(--rule);background:var(--surface);padding:12px 0;overflow-y:auto}
+.ixhead{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);
+     padding:4px 18px 9px}
+.item{display:block;width:100%;text-align:left;font:inherit;background:transparent;border:0;
+     cursor:pointer;padding:8px 18px;border-left:2px solid transparent;color:var(--ink)}
+.item:hover{background:var(--accent-soft)}
+.item[aria-current="true"]{background:var(--accent-soft);border-left-color:var(--accent)}
+.item:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.item .nm{font-size:12px;display:flex;gap:6px;align-items:baseline}
+.item .nm .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .mt{font-size:10.5px;color:var(--ink-3);display:flex;justify-content:space-between;
+     gap:8px;margin-top:3px;font-variant-numeric:tabular-nums}
+.item .mt .p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .mt .n{flex:none}
+.meter{display:block;height:2px;background:var(--rule);margin-top:5px;border-radius:2px;
+     overflow:hidden}
+.meter span{display:block;height:2px;background:var(--accent)}
+.tag{font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;padding:1px 5px;
+     border-radius:3px;flex:none;font-weight:600}
+.tag.wrong{background:var(--warn-soft);color:var(--warn)}
+.tag.seen{background:var(--rule);color:var(--ink-3)}
+.tag.clean{background:var(--add-mark);color:var(--add-ink)}
+.item.done .nm .t{color:var(--ink-3);text-decoration:line-through;
+     text-decoration-color:var(--rule)}
+.item.done .tick{color:var(--add-ink);flex:none;font-size:11px}
+.prog{font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums;
+     display:flex;align-items:center;gap:9px}
+.prog .track{width:70px;height:3px;background:var(--rule);border-radius:2px;overflow:hidden}
+.prog .track span{display:block;height:3px;background:var(--add-ink)}
+.linkbtn{font:inherit;font-size:11px;background:none;border:0;color:var(--ink-3);
+     cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px}
+.linkbtn:hover{color:var(--ink)}
+.linkbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.acts{display:flex;gap:9px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.btn{font:inherit;font-size:11.5px;padding:5px 12px;border-radius:6px;cursor:pointer;
+     border:1px solid var(--accent);background:var(--accent);color:#fff}
+.btn.ghost{background:transparent;color:var(--ink-2);border-color:var(--rule)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.kbd{font-size:10.5px;color:var(--ink-3);letter-spacing:.02em}
+.pane{overflow:auto;padding:0 0 60px}
+.paths{padding:16px 26px 13px;border-bottom:1px solid var(--rule);background:var(--surface)}
+.paths .old{color:var(--del-ink)}
+.paths .new{color:var(--add-ink)}
+.paths .arrow{color:var(--ink-3);padding:0 8px}
+.paths .stat{font-size:11px;color:var(--ink-3);margin-top:6px;font-variant-numeric:tabular-nums}
+.flag{font-family:var(--sans);font-size:12px;line-height:1.55;color:var(--warn);
+     background:var(--warn-soft);border:1px solid var(--warn);border-radius:6px;
+     padding:9px 12px;margin:12px 0 0;max-width:82ch}
+.flag b{font-weight:650}
+.wrap{overflow-x:auto}
+table.diff{border-collapse:collapse;width:100%;table-layout:fixed;font-size:12.5px}
+table.diff col.g{width:52px}
+table.diff td{padding:1px 10px;vertical-align:top;white-space:pre-wrap;word-break:break-word}
+td.gut{color:var(--ink-3);text-align:right;user-select:none;font-variant-numeric:tabular-nums;
+     font-size:11px;padding-top:2px;border-right:1px solid var(--rule);background:var(--surface)}
+tr.chg td.l,tr.del td.l{background:var(--del-bg)}
+tr.chg td.r,tr.add td.r{background:var(--add-bg)}
+td.l,td.r{border-right:1px solid var(--rule)}
+em.wd{font-style:normal;background:var(--del-mark);color:var(--del-ink);border-radius:2px}
+em.wa{font-style:normal;background:var(--add-mark);color:var(--add-ink);border-radius:2px}
+em.ph{font-style:normal;background:var(--froz-mark);color:var(--froz-ink);border-radius:2px}
+tr.gap td{background:var(--ground);color:var(--ink-3);text-align:center;font-size:10px;
+     letter-spacing:.3em;padding:3px 0}
+.empty{padding:26px;font-family:var(--sans);font-size:12.5px;color:var(--ink-2)}
+.foot{border-top:1px solid var(--rule);background:var(--surface);padding:20px 26px 30px}
+.foot h2{margin:0 0 8px;font-size:12px;font-weight:650;letter-spacing:.02em}
+.foot p{font-family:var(--sans);font-size:12.5px;line-height:1.6;color:var(--ink-2);
+     max-width:70ch;margin:0 0 12px}
+.foot .scroll{overflow-x:auto;max-width:100%}
+.foot table{border-collapse:collapse;font-size:11.5px}
+.foot td{padding:2px 14px 2px 0;color:var(--ink-3);white-space:nowrap}
+.foot td.ok{color:var(--add-ink)}
+@media (max-width:880px){
+  .console{grid-template-columns:1fr}
+  .index{border-right:0;border-bottom:1px solid var(--rule);max-height:230px}
+  table.diff col.g{width:38px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+"""
+
+HTML = f"""<title>Renames GitHub hides — word-level review</title>
+<style>{CSS}</style>
+<div class="masthead">
+  <h1>Renames GitHub hides · word-level review</h1>
+  <p class="sub">refactor/german-to-english-rename &nbsp;·&nbsp; base main@52efff3 &nbsp;·&nbsp; 242 renames total, 168 of them GitHub shows correctly</p>
+  <p class="note">Every pair here is one GitHub's diff does <b>not</b> put side by side. It fails
+  two ways: {63 - n_wrong} pairs fall under its 50&#37; rename threshold and render as an unrelated
+  delete plus add, and one it <i>does</i> pair — to the <b>wrong file</b>, because content
+  similarity picked the partner rather than the name.
+  <br><br><b>Glossary cancelled</b> applies the rename glossary from
+  <code>2026-07-31-german-to-english-rename-design.md</code> to the old file first, so a
+  by-the-book rename produces identical tokens and vanishes. What stays lit is what the glossary
+  does <b>not</b> account for. German the rename deliberately froze — exception messages, prompt
+  prose — is marked separately rather than counted, since applying the glossary to one side only
+  would otherwise invent a difference there.
+  <br><br>GitHub's per-file <b>Viewed</b> ticks live in your account and aren't readable from an
+  API token, so this page keeps its own. <b>V</b> marks the open file viewed and jumps to the next
+  one; <b>J</b> and <b>K</b> step through the list. It is stored in this browser only — nothing is
+  written back to PR&nbsp;#252.</p>
+  <div class="tally">
+    <div><div class="k">pairs</div><div class="v">63</div></div>
+    <div><div class="k">raw tokens</div><div class="v">{tot_raw:,}</div></div>
+    <div><div class="k">after glossary</div><div class="v">{tot_nrm:,}</div></div>
+    <div><div class="k">frozen</div><div class="v">{tot_ph}</div></div>
+    <div><div class="k">clean</div><div class="v">{n_clean}</div></div>
+  </div>
+</div>
+<div class="bar">
+  <div class="seg" role="group" aria-label="Diff mode">
+    <button id="mN" aria-pressed="true">Glossary cancelled</button>
+    <button id="mR" aria-pressed="false">Raw rename</button>
+  </div>
+  <div class="seg" role="group" aria-label="Filter">
+    <button class="flt" data-f="all" aria-pressed="true">All 63</button>
+    <button class="flt" data-f="todo" aria-pressed="false">Unviewed 63</button>
+    <button class="flt" data-f="work" aria-pressed="false">Needs a look {63 - n_clean}</button>
+    <button class="flt" data-f="wrong" aria-pressed="false">Wrong pair {n_wrong}</button>
+  </div>
+  <div class="prog"><span class="track"><span id="pbar" style="width:0%"></span></span>
+    <span id="ptxt">0 of 63 viewed</span>
+    <button class="linkbtn" id="reset">reset</button></div>
+  <div class="legend"><i class="d">removed</i><i class="a">added</i><i class="f">frozen German</i></div>
+</div>
+<div class="console">
+  <nav class="index" aria-label="Files"><div class="ixhead" id="ixh"></div><div id="ix"></div></nav>
+  <section class="pane"><div id="pane"></div></section>
+</div>
+<div class="foot">
+  <h2>The 11 pairs left out</h2>
+  <p>These eval fixtures are zero-byte on both sides, so git pairs them arbitrarily among
+  themselves and GitHub inherits the shuffle. The cross-links below are wrong, but the files are
+  empty — the move is real, the content is not there to review.</p>
+  <div class="scroll"><table id="emp"></table></div>
+</div>
+<script>
+const D={DATA},EMP={EDATA},MAXW={maxw};
+let cur=0,mode='N',flt='all';
+const ix=document.getElementById('ix'),pane=document.getElementById('pane'),ixh=document.getElementById('ixh');
+
+// GitHub keeps its per-file "Viewed" ticks inside your own account and never
+// exposes them to a token, so this page keeps its own, in this browser.
+const KEY='hsp-hidden-renames-viewed-v1';
+let viewed=new Set();
+try{{viewed=new Set(JSON.parse(localStorage.getItem(KEY)||'[]'));}}catch(e){{}}
+function save(){{try{{localStorage.setItem(KEY,JSON.stringify([...viewed]));}}catch(e){{}}}}
+function isDone(f){{return viewed.has(f.id);}}
+
+function pass(f){{
+  if(flt==='todo')return !isDone(f);
+  if(flt==='work')return (mode==='N'?f.nw:f.rw)>0;
+  if(flt==='wrong')return f.kind==='mispaired';
+  return true;
+}}
+function view(){{return D.map((f,i)=>[f,i]).filter(([f])=>pass(f));}}
+function drawProgress(){{
+  const n=D.filter(isDone).length;
+  document.getElementById('pbar').style.width=Math.round(100*n/D.length)+'%';
+  document.getElementById('ptxt').textContent=`${{n}} of ${{D.length}} viewed`;
+  document.querySelector('.flt[data-f="todo"]').textContent=`Unviewed ${{D.length-n}}`;
+}}
+function drawIndex(){{
+  const v=view();
+  ixh.textContent=`${{v.length}} file${{v.length===1?'':'s'}} · ranked by residual tokens`;
+  ix.innerHTML=v.map(([f,i])=>{{
+    const w=mode==='N'?f.nw:f.rw, c=mode==='N'?f.nc:f.rc, done=isDone(f);
+    const tags=(f.kind==='mispaired'?'<span class="tag wrong">wrong pair</span>':'')+
+               (f.prev?'<span class="tag seen">prev</span>':'')+
+               (mode==='N'&&f.nw===0?'<span class="tag clean">clean</span>':'');
+    return `<button class="item${{done?' done':''}}" data-i="${{i}}" aria-current="${{i===cur}}">
+      <span class="nm">${{done?'<span class="tick">✓</span>':''}}<span class="t">${{f.nn}}</span>${{tags}}</span>
+      <span class="mt"><span class="p">${{f.np}}</span><span class="n">${{w}} tok · ${{c}} ln</span></span>
+      <span class="meter"><span style="width:${{Math.max(2,Math.round(100*w/MAXW))}}%"></span></span>
+    </button>`;}}).join('')||'<div class="empty">Nothing left under this filter.</div>';
+}}
+function drawPane(){{
+  const f=D[cur];
+  if(!f){{pane.innerHTML='<div class="empty">Nothing selected.</div>';return;}}
+  const rows=mode==='N'?f.N:f.R;
+  const body=rows.map(r=>{{
+    if(r[0]==='gap')return '<tr class="gap"><td colspan="4">···</td></tr>';
+    const ln=r[1]==null?'':r[1], rn=r[2]==null?'':r[2];
+    return `<tr class="${{r[0]}}"><td class="gut">${{ln}}</td><td class="l">${{r[3]||'&nbsp;'}}</td>`+
+           `<td class="gut">${{rn}}</td><td class="r">${{r[4]||'&nbsp;'}}</td></tr>`;
+  }}).join('');
+  const how=f.kind==='mispaired'
+    ? `<div class="flag"><b>GitHub shows this file paired to the wrong partner.</b> It renders
+       <code>${{f.on}}</code> → <code>${{f.ght}}</code> at ${{f.ghs}}&#37; similarity. The pairing above is
+       the one the names support.</div>`
+    : (f.sim==null
+       ? `<div class="flag"><b>Git pairs this at no threshold at all.</b> There is no rename-detection
+          setting, on GitHub or locally, that shows these two files side by side.</div>`
+       : `<div class="flag">Similarity <b>${{f.sim}}&#37;</b> — under GitHub's 50&#37; threshold, so it
+          renders there as an unrelated delete plus add. Locally:
+          <code>git diff -M${{Math.max(1,f.sim-2)}}% --word-diff</code>, with <b>both</b> paths in the
+          pathspec or rename detection silently switches off again.</div>`);
+  const cancelled=f.rw-f.nw-f.ph;
+  pane.innerHTML=`<div class="paths">
+      <span class="old">${{f.on}}</span><span class="arrow">→</span><span class="new">${{f.nn}}</span>
+      <div class="stat">${{f.op}} → ${{f.np}}</div>
+      <div class="stat">${{f.L}} lines · ${{mode==='N'?f.nc:f.rc}} changed lines · ${{mode==='N'?f.nw:f.rw}} highlighted tokens${{mode==='N'?` · ${{cancelled}} cancelled by the glossary${{f.ph?` · ${{f.ph}} frozen German`:''}}`:''}}</div>
+      ${{how}}
+      <div class="acts">
+        <button class="btn" id="mv">${{isDone(f)?'Next unviewed':'Mark viewed &amp; next'}}</button>
+        ${{isDone(f)?'<button class="btn ghost" id="unmv">Unmark</button>':''}}
+        <span class="kbd">V marks viewed · J / K step through files</span>
+      </div>
+    </div>
+    <div class="wrap"><table class="diff"><colgroup><col class="g"><col><col class="g"><col></colgroup><tbody>${{body}}</tbody></table></div>`;
+}}
+function draw(){{drawIndex();drawPane();drawProgress();bindActions();}}
+function toTop(){{document.querySelector('.pane').scrollTop=0;}}
+function step(d){{
+  const v=view(); if(!v.length)return;
+  let at=v.findIndex(([,i])=>i===cur);
+  if(at<0)at=0; else at=Math.min(v.length-1,Math.max(0,at+d));
+  cur=v[at][1];draw();toTop();
+}}
+function nextTodo(){{
+  const v=view().filter(([f,i])=>i!==cur&&!isDone(f));
+  if(v.length){{cur=v[0][1];draw();toTop();}}else{{draw();}}
+}}
+function bindActions(){{
+  const mv=document.getElementById('mv');
+  if(mv)mv.onclick=()=>{{viewed.add(D[cur].id);save();nextTodo();}};
+  const un=document.getElementById('unmv');
+  if(un)un.onclick=()=>{{viewed.delete(D[cur].id);save();draw();}};
+}}
+document.addEventListener('keydown',e=>{{
+  if(e.metaKey||e.ctrlKey||e.altKey)return;
+  const k=e.key.toLowerCase();
+  if(k==='v'){{e.preventDefault();
+    if(isDone(D[cur])){{viewed.delete(D[cur].id);save();draw();}}
+    else{{viewed.add(D[cur].id);save();nextTodo();}}}}
+  else if(k==='j'){{e.preventDefault();step(1);}}
+  else if(k==='k'){{e.preventDefault();step(-1);}}
+}});
+document.getElementById('reset').onclick=()=>{{viewed.clear();save();draw();}};
+ix.addEventListener('click',e=>{{const b=e.target.closest('.item');if(!b)return;cur=+b.dataset.i;draw();toTop();}});
+document.getElementById('mN').onclick=()=>{{mode='N';sync();}};
+document.getElementById('mR').onclick=()=>{{mode='R';sync();}};
+document.querySelectorAll('.flt').forEach(b=>b.onclick=()=>{{
+  flt=b.dataset.f;
+  document.querySelectorAll('.flt').forEach(o=>o.setAttribute('aria-pressed',o===b));
+  const v=view();
+  if(!v.some(([,i])=>i===cur)&&v.length)cur=v[0][1];
+  draw();}});
+function sync(){{document.getElementById('mN').setAttribute('aria-pressed',mode==='N');
+  document.getElementById('mR').setAttribute('aria-pressed',mode==='R');draw();}}
+document.getElementById('emp').innerHTML=EMP.map(e=>
+  `<tr><td>${{e.o}}</td><td>→</td><td class="ok">${{e.n}}</td><td>GitHub says → ${{e.g}}</td></tr>`).join('');
+draw();
+</script>"""
+
+out = OUT / "hidden-renames.html"
+out.write_text(HTML)
+print("wrote", out, f"{out.stat().st_size/1024:.0f} KB")
