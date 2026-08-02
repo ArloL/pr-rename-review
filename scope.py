@@ -58,6 +58,13 @@ for r in rows:
     r["identical"] = ho == hn
 
 json.dump(rows, open(OUT / "scope.json", "w"), indent=1)
+# Counts the page needs but cannot derive from diffdata2.json, which only
+# carries the in-scope pairs. Separate file so diffdata2.json keeps its shape.
+json.dump(dict(canon_total=len(canon), gh_correct=len(canon) - len(rows),
+               in_scope=len(rows),
+               split=sum(1 for r in rows if r["kind"] == "split"),
+               mispaired=sum(1 for r in rows if r["kind"] == "mispaired")),
+          open(OUT / "scope-summary.json", "w"), indent=1)
 with open(OUT / "pairs2.tsv", "w") as fh:
     for r in rows:
         fh.write(f"{r['old']}\t{r['new']}\n")

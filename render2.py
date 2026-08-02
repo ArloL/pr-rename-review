@@ -1,10 +1,34 @@
-import json, os, pathlib
+import json, os, pathlib, sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from config import load_config
+from github import GitHubError, anchor, resolve_repo, resolve_target
 
 S = pathlib.Path(__file__).parent
 OUT = pathlib.Path(os.environ.get("OUT") or (pathlib.Path(__file__).parent / "build"))
 OUT.mkdir(parents=True, exist_ok=True)
 blob = json.loads((OUT / "diffdata2.json").read_text())
 files, empties = blob["files"], blob["empties"]
+
+CFG = load_config(S / ".pr-rename-review.toml")
+SUMMARY = json.loads((OUT / "scope-summary.json").read_text()) if (
+    OUT / "scope-summary.json").exists() else {}
+
+# `build` must work with no gh available; the deep links are simply absent.
+try:
+    _repo_cwd = os.environ.get("REPO") or None
+    OWNER, REPO_NAME = resolve_repo(cwd=_repo_cwd)
+except (GitHubError, KeyError):
+    OWNER = REPO_NAME = None
+
+
+def pr_url(cfg, owner, repo, path, line=None):
+    """Deep link into GitHub's own diff. Commenting happens there -- this tool
+    does not write comments, by design."""
+    if not (cfg.pr and owner and repo):
+        return None
+    return (f"https://github.com/{owner}/{repo}/pull/{cfg.pr}/files"
+            f"{anchor(path, line)}")
 
 PFX = [("src/main/java/de/haegerconsulting/hsp/", "main·"),
        ("src/test/java/de/haegerconsulting/hsp/", "test·"),
@@ -27,6 +51,7 @@ for f in files:
         "sim": f["sim"], "kind": f["kind"],
         "ght": short(f["gh_target"] or "") if f["gh_target"] else None,
         "ghs": f["gh_score"], "area": f["area"], "prev": f["prev"],
+        "gh": pr_url(CFG, OWNER, REPO_NAME, f["new"]),
         "rc": f["raw_c"], "nc": f["nrm_c"], "rw": f["raw_w"], "nw": f["nrm_w"],
         "ph": f["nrm_ph"], "L": f["lines"],
         "R": [[r[0], r[1], r[2], r[3], r[4]] for r in f["raw"]],
@@ -45,6 +70,9 @@ maxw = max(c["nw"] for c in compact) or 1
 n_clean = sum(1 for c in compact if c["nw"] == 0)
 n_wrong = sum(1 for c in compact if c["kind"] == "mispaired")
 n_prev = sum(1 for c in compact if c["prev"])
+n_pairs = len(compact)
+n_renames = SUMMARY.get("canon_total", n_pairs)
+n_correct = SUMMARY.get("gh_correct", 0)
 tot_raw = sum(c["rw"] for c in compact)
 tot_nrm = sum(c["nw"] for c in compact)
 tot_ph = sum(c["ph"] for c in compact)
@@ -197,16 +225,22 @@ tr.gap td{background:var(--ground);color:var(--ink-3);text-align:center;font-siz
   table.diff col.g{width:38px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.syncst{font-size:12px;color:var(--ink-3);white-space:nowrap}
+.syncst.warn{color:var(--warn);font-weight:600}
+.ghlink{margin-left:6px;color:var(--ink-3);text-decoration:none;font-size:12px}
+.ghlink:hover{color:var(--accent)}
+#unk{margin-top:24px}
+#unk ul{margin:8px 0 0 18px;font-family:var(--mono);font-size:12px}
 """
 
 HTML = f"""<title>Renames GitHub hides — word-level review</title>
 <style>{CSS}</style>
 <div class="masthead">
   <h1>Renames GitHub hides · word-level review</h1>
-  <p class="sub">refactor/german-to-english-rename &nbsp;·&nbsp; base main@52efff3 &nbsp;·&nbsp; 242 renames total, 168 of them GitHub shows correctly</p>
+  <p class="sub">{CFG.head} &nbsp;·&nbsp; base {CFG.base} &nbsp;·&nbsp; {n_renames} renames total, {n_correct} of them GitHub shows correctly</p>
   <p class="note">Every pair here is one GitHub's diff does <b>not</b> put side by side. It fails
-  two ways: {63 - n_wrong} pairs fall under its 50&#37; rename threshold and render as an unrelated
-  delete plus add, and one it <i>does</i> pair — to the <b>wrong file</b>, because content
+  two ways: {n_pairs - n_wrong} pairs fall under its 50&#37; rename threshold and render as an unrelated
+  delete plus add, and {n_wrong} it <i>does</i> pair — to the <b>wrong file</b>, because content
   similarity picked the partner rather than the name.
   <br><br><b>Glossary cancelled</b> applies the rename glossary from
   <code>2026-07-31-german-to-english-rename-design.md</code> to the old file first, so a
@@ -214,12 +248,13 @@ HTML = f"""<title>Renames GitHub hides — word-level review</title>
   does <b>not</b> account for. German the rename deliberately froze — exception messages, prompt
   prose — is marked separately rather than counted, since applying the glossary to one side only
   would otherwise invent a difference there.
-  <br><br>GitHub's per-file <b>Viewed</b> ticks live in your account and aren't readable from an
-  API token, so this page keeps its own. <b>V</b> marks the open file viewed and jumps to the next
-  one; <b>J</b> and <b>K</b> step through the list. It is stored in this browser only — nothing is
-  written back to PR&nbsp;#252.</p>
+  <br><br>GitHub's per-file <b>Viewed</b> ticks are read and written through your own
+  <code>gh</code> login, so a tick here is a tick on the PR and a tick on the PR shows up here.
+  <b>V</b> marks the open file viewed and jumps to the next one; <b>J</b> and <b>K</b> step
+  through the list. To comment, follow the ↗ link into GitHub's diff — this page does not write
+  comments.</p>
   <div class="tally">
-    <div><div class="k">pairs</div><div class="v">63</div></div>
+    <div><div class="k">pairs</div><div class="v">{n_pairs}</div></div>
     <div><div class="k">raw tokens</div><div class="v">{tot_raw:,}</div></div>
     <div><div class="k">after glossary</div><div class="v">{tot_nrm:,}</div></div>
     <div><div class="k">frozen</div><div class="v">{tot_ph}</div></div>
@@ -232,14 +267,15 @@ HTML = f"""<title>Renames GitHub hides — word-level review</title>
     <button id="mR" aria-pressed="false">Raw rename</button>
   </div>
   <div class="seg" role="group" aria-label="Filter">
-    <button class="flt" data-f="all" aria-pressed="true">All 63</button>
-    <button class="flt" data-f="todo" aria-pressed="false">Unviewed 63</button>
-    <button class="flt" data-f="work" aria-pressed="false">Needs a look {63 - n_clean}</button>
+    <button class="flt" data-f="all" aria-pressed="true">All {n_pairs}</button>
+    <button class="flt" data-f="todo" aria-pressed="false">Unviewed {n_pairs}</button>
+    <button class="flt" data-f="work" aria-pressed="false">Needs a look {n_pairs - n_clean}</button>
     <button class="flt" data-f="wrong" aria-pressed="false">Wrong pair {n_wrong}</button>
   </div>
   <div class="prog"><span class="track"><span id="pbar" style="width:0%"></span></span>
-    <span id="ptxt">0 of 63 viewed</span>
+    <span id="ptxt">0 of {n_pairs} viewed</span>
     <button class="linkbtn" id="reset">reset</button></div>
+  <span id="syncst" class="syncst">Checking GitHub…</span>
   <div class="legend"><i class="d">removed</i><i class="a">added</i><i class="f">frozen German</i></div>
 </div>
 <div class="console">
@@ -252,19 +288,84 @@ HTML = f"""<title>Renames GitHub hides — word-level review</title>
   themselves and GitHub inherits the shuffle. The cross-links below are wrong, but the files are
   empty — the move is real, the content is not there to review.</p>
   <div class="scroll"><table id="emp"></table></div>
+  <div id="unk"></div>
 </div>
 <script>
 const D={DATA},EMP={EDATA},MAXW={maxw};
 let cur=0,mode='N',flt='all';
 const ix=document.getElementById('ix'),pane=document.getElementById('pane'),ixh=document.getElementById('ixh');
 
-// GitHub keeps its per-file "Viewed" ticks inside your own account and never
-// exposes them to a token, so this page keeps its own, in this browser.
+// Viewed state lives in GitHub, reached through the local server, so a tick
+// here is the same tick a teammate sees on the PR. localStorage is the
+// fallback for when `gh` is unavailable.
 const KEY='hsp-hidden-renames-viewed-v1';
-let viewed=new Set();
-try{{viewed=new Set(JSON.parse(localStorage.getItem(KEY)||'[]'));}}catch(e){{}}
-function save(){{try{{localStorage.setItem(KEY,JSON.stringify([...viewed]));}}catch(e){{}}}}
+let viewed=new Set(),synced=false,unknown=[];
+function saveLocal(){{try{{localStorage.setItem(KEY,JSON.stringify([...viewed]));}}catch(e){{}}}}
+function loadLocal(){{try{{viewed=new Set(JSON.parse(localStorage.getItem(KEY)||'[]'));}}catch(e){{}}}}
 function isDone(f){{return viewed.has(f.id);}}
+
+function banner(text,warn){{
+  const el=document.getElementById('syncst');
+  if(!el)return;
+  el.textContent=text;
+  el.className=warn?'syncst warn':'syncst';
+}}
+
+async function loadViewed(){{
+  try{{
+    const r=await fetch('/api/viewed');
+    const j=await r.json();
+    if(j.synced){{
+      synced=true;
+      viewed=new Set(Object.entries(j.states)
+        .filter(([,v])=>v==='VIEWED').map(([k])=>k));
+      const known=new Set(Object.keys(j.states));
+      unknown=D.filter(f=>!known.has(f.id)).map(f=>f.id);
+      banner(unknown.length
+        ? 'Synced with GitHub — '+unknown.length+' file(s) missing from its list, see below'
+        : 'Viewed state synced with GitHub', unknown.length>0);
+    }}else{{
+      loadLocal();
+      banner('Not synced with GitHub ('+(j.reason||'unknown')+
+             ') — ticks stay in this browser',true);
+    }}
+  }}catch(e){{
+    loadLocal();
+    banner('Local-only: the review server is not reachable',true);
+  }}
+  draw();
+}}
+
+async function setViewed(id,on){{
+  const had=viewed.has(id);
+  on?viewed.add(id):viewed.delete(id);
+  draw();
+  if(!synced||unknown.includes(id)){{saveLocal();return true;}}
+  try{{
+    const r=await fetch('/api/viewed',{{method:'POST',
+      headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{path:id,viewed:on}})}});
+    if(!r.ok)throw new Error(await r.text());
+    return true;
+  }}catch(e){{
+    // Revert. A tick that never reached GitHub would mean a file marked
+    // reviewed that nobody reviewed.
+    had?viewed.add(id):viewed.delete(id);
+    banner('GitHub rejected that change — tick reverted',true);
+    draw();
+    return false;
+  }}
+}}
+
+function drawUnknown(){{
+  const el=document.getElementById('unk');
+  if(!el)return;
+  el.innerHTML=unknown.length
+    ? '<h2>Not in GitHub&#39;s file list</h2><p>These ticks stay in this browser. '+
+      'A path here usually means the derived new path is wrong — check the '+
+      'pairing report.</p><ul>'+unknown.map(u=>`<li>${{u}}</li>`).join('')+'</ul>'
+    : '';
+}}
 
 function pass(f){{
   if(flt==='todo')return !isDone(f);
@@ -287,8 +388,11 @@ function drawIndex(){{
     const tags=(f.kind==='mispaired'?'<span class="tag wrong">wrong pair</span>':'')+
                (f.prev?'<span class="tag seen">prev</span>':'')+
                (mode==='N'&&f.nw===0?'<span class="tag clean">clean</span>':'');
+    // stopPropagation: without it the link click also fires the row handler.
+    const gh=f.gh?`<a class="ghlink" href="${{f.gh}}" target="_blank" rel="noopener"
+      onclick="event.stopPropagation()" title="Open in GitHub to comment">↗</a>`:'';
     return `<button class="item${{done?' done':''}}" data-i="${{i}}" aria-current="${{i===cur}}">
-      <span class="nm">${{done?'<span class="tick">✓</span>':''}}<span class="t">${{f.nn}}</span>${{tags}}</span>
+      <span class="nm">${{done?'<span class="tick">✓</span>':''}}<span class="t">${{f.nn}}</span>${{tags}}${{gh}}</span>
       <span class="mt"><span class="p">${{f.np}}</span><span class="n">${{w}} tok · ${{c}} ln</span></span>
       <span class="meter"><span style="width:${{Math.max(2,Math.round(100*w/MAXW))}}%"></span></span>
     </button>`;}}).join('')||'<div class="empty">Nothing left under this filter.</div>';
@@ -328,7 +432,7 @@ function drawPane(){{
     </div>
     <div class="wrap"><table class="diff"><colgroup><col class="g"><col><col class="g"><col></colgroup><tbody>${{body}}</tbody></table></div>`;
 }}
-function draw(){{drawIndex();drawPane();drawProgress();bindActions();}}
+function draw(){{drawIndex();drawPane();drawProgress();drawUnknown();bindActions();}}
 function toTop(){{document.querySelector('.pane').scrollTop=0;}}
 function step(d){{
   const v=view(); if(!v.length)return;
@@ -342,20 +446,28 @@ function nextTodo(){{
 }}
 function bindActions(){{
   const mv=document.getElementById('mv');
-  if(mv)mv.onclick=()=>{{viewed.add(D[cur].id);save();nextTodo();}};
+  if(mv)mv.onclick=async()=>{{
+    if(isDone(D[cur])){{nextTodo();return;}}
+    if(await setViewed(D[cur].id,true))nextTodo();}};
   const un=document.getElementById('unmv');
-  if(un)un.onclick=()=>{{viewed.delete(D[cur].id);save();draw();}};
+  if(un)un.onclick=()=>setViewed(D[cur].id,false);
 }}
 document.addEventListener('keydown',e=>{{
   if(e.metaKey||e.ctrlKey||e.altKey)return;
   const k=e.key.toLowerCase();
   if(k==='v'){{e.preventDefault();
-    if(isDone(D[cur])){{viewed.delete(D[cur].id);save();draw();}}
-    else{{viewed.add(D[cur].id);save();nextTodo();}}}}
+    if(isDone(D[cur])){{setViewed(D[cur].id,false);}}
+    else{{setViewed(D[cur].id,true).then(ok=>{{if(ok)nextTodo();}});}}}}
   else if(k==='j'){{e.preventDefault();step(1);}}
   else if(k==='k'){{e.preventDefault();step(-1);}}
 }});
-document.getElementById('reset').onclick=()=>{{viewed.clear();save();draw();}};
+// Unmark through the server rather than clearing a local set GitHub still
+// disagrees with.
+document.getElementById('reset').onclick=async()=>{{
+  const btn=document.getElementById('reset');
+  btn.disabled=true;
+  for(const id of [...viewed]){{await setViewed(id,false);}}
+  btn.disabled=false;}};
 ix.addEventListener('click',e=>{{const b=e.target.closest('.item');if(!b)return;cur=+b.dataset.i;draw();toTop();}});
 document.getElementById('mN').onclick=()=>{{mode='N';sync();}};
 document.getElementById('mR').onclick=()=>{{mode='R';sync();}};
@@ -369,7 +481,7 @@ function sync(){{document.getElementById('mN').setAttribute('aria-pressed',mode=
   document.getElementById('mR').setAttribute('aria-pressed',mode==='R');draw();}}
 document.getElementById('emp').innerHTML=EMP.map(e=>
   `<tr><td>${{e.o}}</td><td>→</td><td class="ok">${{e.n}}</td><td>GitHub says → ${{e.g}}</td></tr>`).join('');
-draw();
+loadViewed();
 </script>"""
 
 out = OUT / "hidden-renames.html"
