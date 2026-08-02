@@ -37,11 +37,16 @@ class GitHubError(Exception):
     pass
 
 
-def _subprocess_runner(cmd):
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    if proc.returncode:
-        raise GitHubError(proc.stderr.strip() or f"{cmd[0]} failed")
-    return proc.stdout
+def runner_for(cwd=None):
+    """`gh` resolves the repository from its working directory, so this must
+    run inside the checkout being reviewed -- not inside this tool."""
+    def run(cmd):
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              cwd=cwd or None)
+        if proc.returncode:
+            raise GitHubError(proc.stderr.strip() or f"{cmd[0]} failed")
+        return proc.stdout
+    return run
 
 
 def anchor(path, line=None):
@@ -77,9 +82,9 @@ def _graphql(run, query, **variables):
 
 
 class GitHub:
-    def __init__(self, owner, repo, pr, runner=None):
+    def __init__(self, owner, repo, pr, runner=None, cwd=None):
         self.owner, self.repo, self.pr = owner, repo, pr
-        self._run = runner or _subprocess_runner
+        self._run = runner or runner_for(cwd)
         self._pr_id = None
 
     def viewed_states(self):
@@ -108,12 +113,30 @@ class GitHub:
         return "VIEWED" if viewed else "UNVIEWED"
 
 
-def resolve_target(runner=None):
-    """(owner, repo, pr_number) for the PR of the current branch."""
-    run = runner or _subprocess_runner
+def resolve_repo(runner=None, cwd=None):
+    """(owner, repo) for the checkout. Used when the PR number is configured,
+    so no branch has to be checked out to find it."""
+    run = runner or runner_for(cwd)
     try:
-        raw = run(["gh", "pr", "view", "--json",
-                   "number,headRepository,headRepositoryOwner"])
+        raw = run(["gh", "repo", "view", "--json", "name,owner"])
+    except FileNotFoundError as exc:
+        raise GitHubError(
+            "gh not found -- install it and run `gh auth login`") from exc
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise GitHubError(f"unexpected output from gh: {raw[:200]!r}") from exc
+    return data["owner"]["login"], data["name"]
+
+
+def resolve_target(runner=None, cwd=None, ref=None):
+    """(owner, repo, pr_number) for the PR of `ref`, or of the current branch."""
+    run = runner or runner_for(cwd)
+    try:
+        cmd = ["gh", "pr", "view"]
+        if ref:
+            cmd.append(ref)
+        raw = run(cmd + ["--json", "number,headRepository,headRepositoryOwner"])
     except FileNotFoundError as exc:
         raise GitHubError(
             "gh not found -- install it and run `gh auth login`") from exc

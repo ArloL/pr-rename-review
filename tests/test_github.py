@@ -103,6 +103,31 @@ def test_unparseable_output_becomes_GitHubError():
         gh.viewed_states()
 
 
+def test_the_default_runner_runs_inside_the_given_checkout(monkeypatch):
+    """gh resolves the repository from its working directory. Running it in
+    this tool's directory finds no remote and reports the PR as unavailable."""
+    import github as mod
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen.update(kw)
+        class P:
+            returncode, stdout, stderr = 0, "{}", ""
+        return P()
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    mod.runner_for("/some/checkout")(["gh", "repo", "view"])
+    assert seen["cwd"] == "/some/checkout"
+
+
+def test_resolve_repo_reads_owner_and_name():
+    payload = json.dumps({"name": "HSP-Backend",
+                          "owner": {"login": "haeger-sales-platform"}})
+    from github import resolve_repo
+    assert resolve_repo(runner=FakeRunner(payload)) == (
+        "haeger-sales-platform", "HSP-Backend")
+
+
 def test_resolve_target_reads_owner_repo_and_number():
     payload = json.dumps({"number": 252,
                           "headRepository": {"name": "hsp"},

@@ -47,6 +47,38 @@ def test_build_runs_all_four_passes(monkeypatch):
     assert seen["p"] == ["pairup.py", "scope.py", "gen2.py", "render2.py"]
 
 
+def test_serve_can_skip_the_build(monkeypatch, tmp_path):
+    called, served = [], []
+    (tmp_path / "hidden-renames.html").write_text("<h1>page</h1>")
+    monkeypatch.setattr("cli.run_passes", lambda p, e: called.append(p) or 0)
+    monkeypatch.setattr("server.serve",
+                        lambda page, gh, **kw: served.append(page))
+    monkeypatch.setattr("cli._github", lambda cfg, cwd=None: object())
+    assert main(["--out", str(tmp_path), "--no-build", "--no-browser",
+                 "serve"]) == 0
+    assert called == [], "serve --no-build must not run the passes"
+    assert served and served[0].name == "hidden-renames.html"
+
+
+def test_serve_rebuilds_by_default(monkeypatch, tmp_path):
+    """No staleness heuristic: a stale page that looks current is the exact
+    failure this tool exists to prevent."""
+    called, served = [], []
+    (tmp_path / "hidden-renames.html").write_text("<h1>page</h1>")
+    monkeypatch.setattr("cli.run_passes", lambda p, e: called.append(p) or 0)
+    monkeypatch.setattr("server.serve",
+                        lambda page, gh, **kw: served.append(page))
+    monkeypatch.setattr("cli._github", lambda cfg, cwd=None: object())
+    main(["--out", str(tmp_path), "--no-browser", "serve"])
+    assert called == [ALL_PASSES]
+
+
+def test_serve_without_a_page_fails_clearly(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr("cli.run_passes", lambda p, e: 0)
+    assert main(["--out", str(tmp_path), "--no-build", "serve"]) == 1
+    assert "does not exist" in capsys.readouterr().err
+
+
 def test_a_failing_pass_stops_the_run(monkeypatch, tmp_path):
     """A pass that fails must not let later passes run against its stale
     output -- that is how a truncated file becomes a wrong answer."""

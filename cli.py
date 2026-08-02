@@ -7,6 +7,8 @@ of drift that churn causes.
 """
 import argparse, os, pathlib, subprocess, sys
 
+from github import GitHub, GitHubError, resolve_repo, resolve_target
+
 ROOT = pathlib.Path(__file__).resolve().parent
 ALL_PASSES = ["pairup.py", "scope.py", "gen2.py", "render2.py"]
 
@@ -47,6 +49,39 @@ def _env(args):
             "OUT": args.out or os.environ.get("OUT") or str(ROOT / "build")}
 
 
+class _OfflineGitHub:
+    """Stands in when gh is unavailable, so the page still loads and honestly
+    reports that nothing is being written back."""
+
+    def __init__(self, reason):
+        self.reason = reason
+
+    def viewed_states(self):
+        raise GitHubError(self.reason)
+
+    def set_viewed(self, path, viewed):
+        raise GitHubError(self.reason)
+
+
+def _github(cfg, cwd=None):
+    """The user's own gh login, or an offline stand-in with the reason.
+
+    `gh` resolves the repository from its working directory, so every call is
+    made inside the checkout under review rather than inside this tool.
+    """
+    try:
+        if cfg.pr:
+            owner, repo = resolve_repo(cwd=cwd)
+            pr = cfg.pr
+        else:
+            owner, repo, pr = resolve_target(cwd=cwd)
+        return GitHub(owner, repo, pr, cwd=cwd)
+    except (GitHubError, KeyError) as exc:
+        print(f"warning: GitHub sync unavailable ({exc}); viewed state will "
+              "be local to your browser", file=sys.stderr)
+        return _OfflineGitHub(str(exc))
+
+
 def _parser():
     p = argparse.ArgumentParser(
         prog="pr-rename-review",
@@ -55,6 +90,10 @@ def _parser():
     p.add_argument("--base", help="base ref (default: config [repo].base)")
     p.add_argument("--head", help="head ref (default: config [repo].head)")
     p.add_argument("--out", help="output directory (default: ./build)")
+    p.add_argument("--no-build", action="store_true",
+                   help="serve the existing build/ without rebuilding")
+    p.add_argument("--no-browser", action="store_true",
+                   help="do not open a browser when serving")
     sub = p.add_subparsers(dest="cmd")
     sub.add_parser("build", help="run the passes and write the page")
     sub.add_parser("pairs", help="print the pairing disagreement report")
@@ -75,8 +114,26 @@ def main(argv=None):
         return run_passes(["pairup.py"], _env(args))
     if args.cmd == "build":
         return run_passes(ALL_PASSES, _env(args))
-    print("error: `serve` is not implemented yet", file=sys.stderr)
-    return 1
+
+    # serve. Rebuilds every time unless told not to: the passes take seconds,
+    # and a staleness heuristic that guesses wrong serves a stale page that
+    # looks current -- the exact failure this tool exists to prevent.
+    from config import load_config
+    from server import serve
+    env = _env(args)
+    if not args.no_build:
+        code = run_passes(ALL_PASSES, env)
+        if code:
+            return code
+    page = pathlib.Path(env["OUT"]) / "hidden-renames.html"
+    if not page.exists():
+        print(f"error: {page} does not exist; run without --no-build",
+              file=sys.stderr)
+        return 1
+    cfg = load_config(ROOT / ".pr-rename-review.toml")
+    serve(page, _github(cfg, cwd=env["REPO"] or None),
+          open_browser=not args.no_browser)
+    return 0
 
 
 if __name__ == "__main__":
