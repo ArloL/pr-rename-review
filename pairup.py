@@ -1,147 +1,145 @@
 #!/usr/bin/env python3
 """Derive the canonical old->new pairing by name, independent of git's
-content-similarity guess, then report where git disagrees."""
-import re, sys, os, pathlib, subprocess
+content-similarity guess, then report where git disagrees.
 
-SP = os.path.dirname(os.path.abspath(__file__))
-OUT = pathlib.Path(os.environ.get("OUT") or (pathlib.Path(__file__).parent / "build"))
-OUT.mkdir(parents=True, exist_ok=True)
+Pairing by name rather than by content is the whole point: below git's 50%
+rename threshold, content similarity starts pairing files that merely have the
+same shape, and a confidently wrong pairing is worse than no pairing.
+"""
+import os, pathlib, subprocess, sys
 
-REPO = os.environ.get("REPO") or subprocess.run(
-    ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
-BASE = os.environ.get("BASE", "main")
-HEAD = os.environ.get("HEAD_REF", "HEAD")
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from config import load_config
 
-
-def tree(ref):
-    return set(subprocess.run(["git", "ls-tree", "-r", "--name-only", ref],
-                              capture_output=True, text=True, cwd=REPO).stdout.split())
+S = pathlib.Path(__file__).resolve().parent
+OUT = pathlib.Path(os.environ.get("OUT") or (S / "build"))
 
 
-head = tree(HEAD)
-main = tree(BASE)
-
-# non-mechanical basename renames (semantic, not word-for-word)
-OVERRIDE = {
-    "AusschreibungAnalysierenService.java": "TenderAnalysisService.java",
-    "AusschreibungAnalysierenAgent.java": "AnalyzeTenderAgent.java",
-    "AusschreibungVerarbeitenAgent.java": "ProcessTenderAgent.java",
-    "DuplikateErkennenService.java": "DuplicateDetectionService.java",
-    "KundenBestGuessService.java": "ClientBestGuessService.java",
-    "KundenMemoryLearningService.java": "ClientMemoryLearningService.java",
-    "AusschreibungDaten.java": "TenderData.java",
-    "AusschreibungErstelltEvent.java": "TenderCreatedEvent.java",
-    "AusschreibungKlassifiziertEvent.java": "TenderClassifiedEvent.java",
-    "AusschreibungExtrahiertEvent.java": "TenderExtractedEvent.java",
-    "AusschreibungKlassifikationKorrigiertEvent.java": "TenderClassificationCorrectedEvent.java",
-    "AusschreibungKundeAktualisiertEvent.java": "TenderClientUpdatedEvent.java",
-    "Auslastung.java": "UtilizationRate.java",
-    "RemoteAnteil.java": "RemoteRatio.java",
-    "Einsatzort.java": "Location.java",
-    "Branche.java": "Industry.java",
-    "Quelle.java": "Source.java",
-    "Klassifikation.java": "Classification.java",
-    "Vermittler.java": "Contact.java",
-    "Kunde.java": "Client.java",
-    "EmailKategorisierung.java": "EmailCategorization.java",
-    "MoveMailToBearbeitetAgent.java": "MoveMailToProcessedAgent.java",
-    "UnbekannterBearbeiterException.java": "UnknownAssigneeException.java",
-    "DuplikatUebersicht.java": "DuplicateOverview.java",
-    "DuplikatGruppe.java": "DuplicateGroup.java",
-    "BestGuessErgebnis.java": "BestGuessResult.java",
-    "Lektion.java": "Lesson.java",
-    "Zuordnungsregel.java": "MatchingRule.java",
-}
-WORDS = [
-    ("AusschreibungDuplikatId", "TenderDuplicateId"),
-    ("AusschreibungDuplikate", "TenderDuplicate"),
-    ("AusschreibungDuplikat", "TenderDuplicate"),
-    ("Ausschreibungen", "Tenders"), ("Ausschreibung", "Tender"),
-    ("Duplikate", "Duplicate"), ("Duplikat", "Duplicate"),
-    ("Kunden", "Client"), ("Kunde", "Client"),
-    ("Vermittler", "Contact"),
-    ("BearbeitungsStatus", "ProcessingStatus"),
-    ("Bearbeiter", "Assignee"),
-    ("Klassifikation", "Classification"),
-]
-# eval fixture directories were renamed too, and not word-for-word
-DIRS = {
-    "Projekt": "ProjectData", "Vermittler": "ContactData",
-    "AusschreibungAuslesen": "ReadTender", "EmailKategorisieren": "CategorizeEmail",
-    "BeschreibungExtrahieren": "ExtractDescription",
-    "ProjektdatenExtrahieren": "ExtractProjectData",
-    "Ausschreibung": "Tender",
-}
+class PairingError(Exception):
+    pass
 
 
-def expect(old):
+def expected_path(old, pairing):
+    """Derive the new path from the old one by name alone.
+
+    Content similarity is never consulted here. Directory segments are
+    rewritten first, then the basename -- by an explicit override if there is
+    one, otherwise by the ordered word list.
+    """
     d, b = os.path.split(old)
-    d = d.replace("/ausschreibung", "/tender")
-    if "/evals/" in d:
-        d = "/".join(DIRS.get(seg, seg) for seg in d.split("/"))
-    if b in OVERRIDE:
-        b = OVERRIDE[b]
+    for a, z in pairing.path_rules:
+        d = d.replace(a, z)
+    if pairing.dir_segments and (
+            pairing.dir_scope is None or pairing.dir_scope in d):
+        d = "/".join(pairing.dir_segments.get(seg, seg) for seg in d.split("/"))
+    if b in pairing.basenames:
+        b = pairing.basenames[b]
     else:
-        for a, z in WORDS:
+        for a, z in pairing.words:
             b = b.replace(a, z)
     return f"{d}/{b}" if d else b
 
 
-# git's own low-threshold opinion
-git_pair, adds, dels = {}, [], []
-for ln in subprocess.run(
-    ["git", "diff", "-M01%", "-l50000", "--name-status", f"{BASE}...{HEAD}"],
-    capture_output=True, text=True, cwd=REPO).stdout.splitlines():
-    f = ln.split("\t")
-    if f[0].startswith("R"):
-        git_pair[f[1]] = (f[2], int(f[0][1:]))
-    elif f[0] == "A":
-        adds.append(f[1])
-    elif f[0] == "D":
-        dels.append(f[1])
+def check_collisions(canon):
+    """Two old paths deriving one new path is ambiguous, and silently keeping
+    the last one would drop a file from the review entirely."""
+    seen = {}
+    for old, new in canon.items():
+        seen.setdefault(new, []).append(old)
+    clashes = {new: olds for new, olds in seen.items() if len(olds) > 1}
+    if clashes:
+        detail = "; ".join(f"{new} <- {', '.join(sorted(olds))}"
+                           for new, olds in sorted(clashes.items()))
+        raise PairingError(f"two old paths derive the same new path: {detail}")
 
-# every old file that moved, per git (renamed or deleted)
-moved_old = list(git_pair) + dels
-canon, unresolved = {}, []
-for o in moved_old:
-    n = expect(o)
-    if n in head:
-        canon[o] = n
-    elif o in git_pair:
-        # no name-derived target exists (frozen rest/ names, verb-flipped
-        # agents); git's own pairing is the best evidence we have
-        canon[o] = git_pair[o][0]
-    else:
-        unresolved.append((o, n))
 
-used = set(canon.values())
-new_only = [a for a in adds if a not in used]
+def tree(repo, ref):
+    return set(subprocess.run(["git", "ls-tree", "-r", "--name-only", ref],
+                              capture_output=True, text=True,
+                              cwd=repo).stdout.split())
 
-print(f"old files that moved: {len(moved_old)}")
-print(f"canonically paired  : {len(canon)}")
-print(f"unresolved olds     : {len(unresolved)}")
-for o, guess in unresolved:
-    print(f"   {o}\n      guessed {guess} (absent)   git says {git_pair.get(o, ('-',))[0]}")
-print(f"genuinely new files : {len(new_only)}")
-for a in new_only:
-    print(f"   {a}")
-dupes = [v for v in used if list(canon.values()).count(v) > 1]
-print(f"collisions          : {sorted(set(dupes))}")
 
-print("\n=== git disagrees with the canonical pairing ===")
-n_dis = 0
-for o, n in sorted(canon.items()):
-    g = git_pair.get(o)
-    if g is None:
-        print(f"  git UNPAIRED  {o}\n             -> {n}")
-        n_dis += 1
-    elif g[0] != n:
-        print(f"  git MISPAIRED {o}\n     git  {g[0]}  ({g[1]}%)\n     true {n}")
-        n_dis += 1
-print(f"total disagreements: {n_dis}")
+def git_pairing(repo, base, head):
+    """git's own low-threshold opinion. -l50000 defeats the default rename
+    limit, which is well below the size of a repo-wide rename. No pathspec:
+    filtering by the new path silently disables rename detection."""
+    pairs, adds, dels = {}, [], []
+    for ln in subprocess.run(
+            ["git", "diff", "-M01%", "-l50000", "--name-status",
+             f"{base}...{head}"],
+            capture_output=True, text=True, cwd=repo).stdout.splitlines():
+        f = ln.split("\t")
+        if f[0].startswith("R"):
+            pairs[f[1]] = (f[2], int(f[0][1:]))
+        elif f[0] == "A":
+            adds.append(f[1])
+        elif f[0] == "D":
+            dels.append(f[1])
+    return pairs, adds, dels
 
-with open(OUT / "canonical-pairs.tsv", "w") as fh:
+
+def main():
+    cfg = load_config(S / ".pr-rename-review.toml")
+    repo = os.environ.get("REPO") or subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True, text=True).stdout.strip()
+    base = os.environ.get("BASE", cfg.base)
+    head = os.environ.get("HEAD_REF", cfg.head)
+
+    OUT.mkdir(parents=True, exist_ok=True)
+    head_tree = tree(repo, head)
+    git_pair, adds, dels = git_pairing(repo, base, head)
+
+    # every old file that moved, per git (renamed or deleted)
+    moved_old = list(git_pair) + dels
+    canon, unresolved = {}, []
+    for o in moved_old:
+        n = expected_path(o, cfg.pairing)
+        if n in head_tree:
+            canon[o] = n
+        elif o in git_pair:
+            # no name-derived target exists (frozen rest/ names, verb-flipped
+            # agents); git's own pairing is the best evidence we have
+            canon[o] = git_pair[o][0]
+        else:
+            unresolved.append((o, n))
+
+    used = set(canon.values())
+    new_only = [a for a in adds if a not in used]
+
+    print(f"old files that moved: {len(moved_old)}")
+    print(f"canonically paired  : {len(canon)}")
+    print(f"unresolved olds     : {len(unresolved)}")
+    for o, guess in unresolved:
+        print(f"   {o}\n      guessed {guess} (absent)   "
+              f"git says {git_pair.get(o, ('-',))[0]}")
+    print(f"genuinely new files : {len(new_only)}")
+    for a in new_only:
+        print(f"   {a}")
+    check_collisions(canon)
+    print("collisions          : []")
+
+    print("\n=== git disagrees with the canonical pairing ===")
+    n_dis = 0
     for o, n in sorted(canon.items()):
         g = git_pair.get(o)
-        fh.write(f"{o}\t{n}\t{g[1] if g and g[0]==n else ''}\t{'ok' if g and g[0]==n else ('unpaired' if g is None else 'mispaired')}\n")
-print(f"\nwrote {OUT}/canonical-pairs.tsv")
+        if g is None:
+            print(f"  git UNPAIRED  {o}\n             -> {n}")
+            n_dis += 1
+        elif g[0] != n:
+            print(f"  git MISPAIRED {o}\n     git  {g[0]}  ({g[1]}%)\n"
+                  f"     true {n}")
+            n_dis += 1
+    print(f"total disagreements: {n_dis}")
+
+    with open(OUT / "canonical-pairs.tsv", "w") as fh:
+        for o, n in sorted(canon.items()):
+            g = git_pair.get(o)
+            ok = g and g[0] == n
+            status = "ok" if ok else ("unpaired" if g is None else "mispaired")
+            fh.write(f"{o}\t{n}\t{g[1] if ok else ''}\t{status}\n")
+    print(f"\nwrote {OUT}/canonical-pairs.tsv")
+
+
+if __name__ == "__main__":
+    main()
