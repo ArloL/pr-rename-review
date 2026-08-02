@@ -67,9 +67,17 @@ stdlib only.
 replacement, the ordered regex pass — stays in Python, because it is logic
 and not vocabulary.
 
-Ordering is significant and preserved as written: longest-first matching in
-`words` is what stops `Ausschreibung → Tender` firing inside
-`AusschreibungDuplikat`.
+Ordering matters in one of the two sections, and differently in each:
+
+- **`[pairing].words` is an ordered list** and stays one. `pairup.py` applies
+  it as a sequence of `str.replace` calls, so `Ausschreibungen → Tenders` must
+  precede `Ausschreibung → Tender` or the plural never matches.
+- **`[glossary]` tables are unordered** and may be written in any order.
+  `glossary.py` sorts them longest-source-first when it compiles them, which
+  is what stops `Ausschreibung → Tender` firing inside
+  `AusschreibungDuplikatRepository`. Two properties of that sort must survive
+  extraction: it is longest-first, and it is **stable**, so equal-length keys
+  keep table precedence — `classes` before `words` before `columns`.
 
 ```toml
 [repo]
@@ -192,12 +200,18 @@ marks viewed and jumps to the next file, `J`/`K` step. That flow is what makes
 
 1. **`save()` becomes a POST** to `/api/viewed`; the initial set comes from
    `GET /api/viewed`. Optimistic update, revert on failure.
-2. **Keys become new paths.** The viewed set currently keys on `f.id`; the
-   API boundary requires the new path.
+2. **Keys are already new paths.** `render2.py` sets `"id": f["new"]`, so the
+   viewed set is keyed correctly for the API boundary and needs no change.
 3. **GitHub deep links** per file and per line —
    `.../pull/252/files#diff-<sha256 of new path>`, with an `R<line>` suffix
    where a line is identified. This is the commenting story.
 4. **A status banner** — synced with GitHub, or local-only with the reason.
+5. **The header prose must be corrected.** It currently states that GitHub's
+   ticks "aren't readable from an API token, so this page keeps its own … 
+   nothing is written back to PR #252". Under v1 that is the opposite of the
+   truth, and a page that misdescribes whether it writes to a shared PR is
+   worse than one that does not write at all. The hardcoded `#252`, `63`,
+   `242` and `168` in that header come from config and payload instead.
 
 ## Verification
 
