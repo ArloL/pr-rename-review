@@ -46,6 +46,18 @@ for o, n in sorted(canon.items()):
     rows.append(dict(old=o, new=n, sim=sim, kind=kind,
                      gh_target=gh_ren.get(o), gh_score=gh_score.get(o)))
 
+# Files the rename changed without moving them. GitHub shows these fine --
+# they ride along because the glossary-cancelled word-level view is worth
+# having for every file the rename touched, not because anything is hidden.
+# Rename detection cannot change which files are M (it only folds delete+add
+# into R), so -M is inert here; it is present because the no-pathspec lint
+# requires every diff in the passes to carry it.
+for ln in subprocess.run(["git", "diff", "-M50%", "-l50000", "--diff-filter=M",
+                          "--name-only", f"{BASE}..{HEAD}"],
+                         capture_output=True, text=True, cwd=REPO).stdout.splitlines():
+    rows.append(dict(old=ln, new=ln, sim=None, kind="modified",
+                     gh_target=None, gh_score=None))
+
 # Blob identity. Two files with the same hash have nothing to review, and a
 # pair that is empty on both sides is why git cross-links these at all --
 # identical content gives similarity nothing to work with.
@@ -62,22 +74,29 @@ for r in rows:
     r["empty"] = ho == EMPTY and hn == EMPTY
     r["identical"] = ho == hn
 
+# A mode-only change is M with identical blobs: nothing to review, and it is
+# not one of the identical-blob shuffles the empties table explains either.
+rows = [r for r in rows if not (r["kind"] == "modified" and r["identical"])]
+
+renames = [r for r in rows if r["kind"] != "modified"]
 json.dump(rows, open(OUT / "scope.json", "w"), indent=1)
 # Counts the page needs but cannot derive from diffdata2.json, which only
 # carries the in-scope pairs. Separate file so diffdata2.json keeps its shape.
-json.dump(dict(canon_total=len(canon), gh_correct=len(canon) - len(rows),
+json.dump(dict(canon_total=len(canon), gh_correct=len(canon) - len(renames),
                in_scope=len(rows),
                split=sum(1 for r in rows if r["kind"] == "split"),
-               mispaired=sum(1 for r in rows if r["kind"] == "mispaired")),
+               mispaired=sum(1 for r in rows if r["kind"] == "mispaired"),
+               modified=sum(1 for r in rows if r["kind"] == "modified")),
           open(OUT / "scope-summary.json", "w"), indent=1)
 with open(OUT / "pairs2.tsv", "w") as fh:
-    for r in rows:
+    for r in renames:
         fh.write(f"{r['old']}\t{r['new']}\n")
 
 print(f"canonical pairs total      : {len(canon)}")
-print(f"GitHub shows correctly     : {len(canon) - len(rows)}")
+print(f"GitHub shows correctly     : {len(canon) - len(renames)}")
 print(f"IN SCOPE                   : {len(rows)}")
 print(f"  shown as add+delete      : {sum(1 for r in rows if r['kind']=='split')}")
+print(f"  renamed in place (M)     : {sum(1 for r in rows if r['kind']=='modified')}")
 print(f"  shown paired to the WRONG file: {sum(1 for r in rows if r['kind']=='mispaired')}")
 print(f"  of those, identical blobs (nothing to review): "
       f"{sum(1 for r in rows if r['identical'])}")

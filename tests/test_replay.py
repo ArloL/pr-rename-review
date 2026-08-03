@@ -27,14 +27,28 @@ def test_replay_matches_golden(rebuilt):
 def test_replay_totals(rebuilt):
     """Measured at 52efff3...1ce7bfa. These move whenever the branch moves,
     so they are asserted against the pinned baseline, not against the
-    historical figures in the design doc."""
+    historical figures in the design doc. 62 of the files are rename pairs;
+    the other 15 changed in place."""
     files = rebuilt["files"]
-    assert len(files) == 62
+    assert len(files) == 77
     assert len(rebuilt["empties"]) == 11
-    assert sum(f["raw_w"] for f in files) == 5187
-    assert sum(f["nrm_w"] for f in files) == 1489
-    assert sum(f["nrm_ph"] for f in files) == 181
-    assert sum(1 for f in files if f["nrm_w"] == 0) == 22
+    assert sum(1 for f in files if f["kind"] == "modified") == 15
+    assert sum(f["raw_w"] for f in files) == 5955
+    assert sum(f["nrm_w"] for f in files) == 1902
+    assert sum(f["nrm_ph"] for f in files) == 461
+    assert sum(1 for f in files if f["nrm_w"] == 0) == 27
+
+
+def test_replay_includes_files_renamed_in_place(rebuilt):
+    """The rename also changes identifiers inside files whose paths never
+    move. GitHub shows those diffs fine, but the glossary-cancelled view is
+    worth having for them too, so they ride along as kind "modified"."""
+    files = {f["new"]: f for f in rebuilt["files"]}
+    sched = ("src/main/java/de/haegerconsulting/hsp/events/"
+             "EventPublicationScheduler.java")
+    assert sched in files
+    assert files[sched]["kind"] == "modified"
+    assert files[sched]["old"] == sched
 
 
 def _pairing_only(report):

@@ -68,8 +68,10 @@ EDATA = json.dumps(EMP, separators=(",", ":"))
 maxw = max(c["nw"] for c in compact) or 1
 n_clean = sum(1 for c in compact if c["nw"] == 0)
 n_wrong = sum(1 for c in compact if c["kind"] == "mispaired")
+n_mod = sum(1 for c in compact if c["kind"] == "modified")
 n_prev = sum(1 for c in compact if c["prev"])
 n_pairs = len(compact)
+n_split = n_pairs - n_wrong - n_mod
 n_renames = SUMMARY.get("canon_total", n_pairs)
 n_correct = SUMMARY.get("gh_correct", 0)
 tot_raw = sum(c["rw"] for c in compact)
@@ -168,6 +170,7 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--mono);
      border-radius:3px;flex:none;font-weight:600}
 .tag.wrong{background:var(--warn-soft);color:var(--warn)}
 .tag.seen{background:var(--rule);color:var(--ink-3)}
+.tag.mod{background:var(--rule);color:var(--ink-3)}
 .tag.clean{background:var(--add-mark);color:var(--add-ink)}
 .item.done .nm .t{color:var(--ink-3);text-decoration:line-through;
      text-decoration-color:var(--rule)}
@@ -243,11 +246,13 @@ HTML = f"""<title>Renames GitHub hides — word-level review</title>
 <style>{CSS}</style>
 <div class="masthead">
   <h1>Renames GitHub hides · word-level review</h1>
-  <p class="sub">{REFS["head_ref"]} <span class="sha">{HEAD_SHORT}</span> &nbsp;·&nbsp; forked from {REFS["base_ref"]} at <span class="sha">{BASE_SHORT}</span> &nbsp;·&nbsp; {n_renames} renames total, {n_correct} of them GitHub shows correctly</p>
-  <p class="note">Every pair here is one GitHub's diff does <b>not</b> put side by side. It fails
-  two ways: {n_pairs - n_wrong} pairs fall under its 50&#37; rename threshold and render as an unrelated
+  <p class="sub">{REFS["head_ref"]} <span class="sha">{HEAD_SHORT}</span> &nbsp;·&nbsp; forked from {REFS["base_ref"]} at <span class="sha">{BASE_SHORT}</span> &nbsp;·&nbsp; {n_renames} renames total, {n_correct} of them GitHub shows correctly &nbsp;·&nbsp; {n_mod} files changed in place</p>
+  <p class="note">Most pairs here are ones GitHub's diff does <b>not</b> put side by side. It fails
+  two ways: {n_split} pairs fall under its 50&#37; rename threshold and render as an unrelated
   delete plus add, and {n_wrong} it <i>does</i> pair — to the <b>wrong file</b>, because content
-  similarity picked the partner rather than the name.
+  similarity picked the partner rather than the name. A further {n_mod} files changed <b>in
+  place</b> — GitHub shows those fine, but the glossary-cancelled view applies all the same, so
+  they are in the list too.
   <br><br><b>Glossary cancelled</b> applies the rename glossary from
   <code>2026-07-31-german-to-english-rename-design.md</code> to the old file first, so a
   by-the-book rename produces identical tokens and vanishes. What stays lit is what the glossary
@@ -277,6 +282,7 @@ HTML = f"""<title>Renames GitHub hides — word-level review</title>
     <button class="flt" data-f="todo" aria-pressed="false">Unviewed {n_pairs}</button>
     <button class="flt" data-f="work" aria-pressed="false">Needs a look {n_pairs - n_clean}</button>
     <button class="flt" data-f="wrong" aria-pressed="false">Wrong pair {n_wrong}</button>
+    <button class="flt" data-f="mod" aria-pressed="false">In place {n_mod}</button>
   </div>
   <div class="prog"><span class="track"><span id="pbar" style="width:0%"></span></span>
     <span id="ptxt">0 of {n_pairs} viewed</span>
@@ -388,6 +394,7 @@ function pass(f){{
   if(flt==='todo')return !isDone(f);
   if(flt==='work')return (mode==='N'?f.nw:f.rw)>0;
   if(flt==='wrong')return f.kind==='mispaired';
+  if(flt==='mod')return f.kind==='modified';
   return true;
 }}
 function view(){{return D.map((f,i)=>[f,i]).filter(([f])=>pass(f));}}
@@ -403,6 +410,7 @@ function drawIndex(){{
   ix.innerHTML=v.map(([f,i])=>{{
     const w=mode==='N'?f.nw:f.rw, c=mode==='N'?f.nc:f.rc, done=isDone(f);
     const tags=(f.kind==='mispaired'?'<span class="tag wrong">wrong pair</span>':'')+
+               (f.kind==='modified'?'<span class="tag mod">in place</span>':'')+
                (f.prev?'<span class="tag seen">prev</span>':'')+
                (mode==='N'&&f.nw===0?'<span class="tag clean">clean</span>':'');
     // stopPropagation: without it the link click also fires the row handler.
@@ -430,7 +438,11 @@ function drawPane(){{
     return `<tr class="${{r[0]}}"><td class="gut">${{ln}}</td><td class="l">${{r[3]||'&nbsp;'}}</td>`+
            `<td class="gut">${{rcell}}</td><td class="r">${{r[4]||'&nbsp;'}}</td></tr>`;
   }}).join('');
-  const how=f.kind==='mispaired'
+  const how=f.kind==='modified'
+    ? `<div class="flag">Changed <b>in place</b> — the path never moved, so GitHub shows this
+       diff normally. It is here so the glossary-cancelled view covers every file the rename
+       touched.</div>`
+    : f.kind==='mispaired'
     ? `<div class="flag"><b>GitHub shows this file paired to the wrong partner.</b> It renders
        <code>${{f.on}}</code> → <code>${{f.ght}}</code> at ${{f.ghs}}&#37; similarity. The pairing above is
        the one the names support.</div>`
@@ -443,8 +455,10 @@ function drawPane(){{
           pathspec or rename detection silently switches off again.</div>`);
   const cancelled=f.rw-f.nw-f.ph;
   pane.innerHTML=`<div class="paths">
-      <span class="old">${{f.on}}</span><span class="arrow">→</span><span class="new">${{f.nn}}</span>
-      <div class="stat">${{f.op}} → ${{f.np}}</div>
+      ${{f.kind==='modified'
+        ? `<span class="new">${{f.nn}}</span>`
+        : `<span class="old">${{f.on}}</span><span class="arrow">→</span><span class="new">${{f.nn}}</span>`}}
+      <div class="stat">${{f.kind==='modified'?f.np:`${{f.op}} → ${{f.np}}`}}</div>
       <div class="stat">${{f.L}} lines · ${{mode==='N'?f.nc:f.rc}} changed lines · ${{mode==='N'?f.nw:f.rw}} highlighted tokens${{mode==='N'?` · ${{cancelled}} cancelled by the glossary${{f.ph?` · ${{f.ph}} frozen German`:''}}`:''}}</div>
       ${{how}}
       <div class="acts">
