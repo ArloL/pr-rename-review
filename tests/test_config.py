@@ -55,24 +55,6 @@ def test_dir_segments_carry_their_scope(tmp_path):
     assert cfg.pairing.dir_segments == {"Projekt": "ProjectData"}
 
 
-def test_glossary_tables_load(tmp_path):
-    cfg = load_config(write(tmp_path, """
-        [repo]
-        base = "main"
-        head = "HEAD"
-        [glossary]
-        classes = { AusschreibungRepository = "TenderRepository" }
-        words = { Ausschreibung = "Tender" }
-        columns = { ausschreibung_id = "tender_id" }
-        [glossary.rules]
-        patterns = [["\\\\bfoo\\\\b", "bar"]]
-    """))
-    assert cfg.glossary.classes == {"AusschreibungRepository": "TenderRepository"}
-    assert cfg.glossary.words == {"Ausschreibung": "Tender"}
-    assert cfg.glossary.columns == {"ausschreibung_id": "tender_id"}
-    assert cfg.glossary.patterns == [("\\bfoo\\b", "bar")]
-
-
 def test_missing_repo_section_is_an_error(tmp_path):
     with pytest.raises(ConfigError, match="repo"):
         load_config(write(tmp_path, "[pairing]\n"))
@@ -104,8 +86,6 @@ def test_empty_defaults_are_usable(tmp_path):
     """))
     assert cfg.pairing.words == []
     assert cfg.pairing.dir_scope is None
-    assert cfg.glossary.classes == {}
-    assert cfg.glossary.patterns == []
 
 
 def test_the_real_config_loads():
@@ -114,5 +94,4 @@ def test_the_real_config_loads():
     cfg = load_config(pathlib.Path(__file__).resolve().parent.parent
                       / ".pr-rename-review.toml")
     assert cfg.pr == 259
-    assert cfg.glossary.words["Ausschreibung"] == "Tender"
     assert cfg.pairing.dir_scope == "/evals/"

@@ -38,37 +38,20 @@ output that found the mispairings in the first place — and needs no browser.
 | Script | Pass | Does |
 |---|---|---|
 | `pairup.py` | 1 | Pairs old→new **by name**, falls back to git similarity, reports every disagreement |
-| `scope.py` | 1b | Works out which pairs GitHub actually fails to show, and which have identical blobs |
-| `gen2.py` | 3 | Word-diffs each pair with the glossary applied to the old side; marks frozen text; counts residual tokens |
-| `render2.py` | 4 | Emits the page, files ranked by residual |
-| `renamediff.sh` | — | Terminal equivalent for one pair |
-
-Pass 2 of the design — inferring the glossary from the PR — **is deliberately
-not built**. The glossary for PR #252 is already written down, and inference is
-where the design risk lives. `.pr-rename-review.toml` is the seam it would plug
-into. See the spec's "What v1 is" for the reasoning.
+| `scope.py` | 1b | Works out how GitHub presents each pair, and which have identical blobs |
+| `gen2.py` | 3 | Word-diffs each pair |
+| `render2.py` | 4 | Emits the page, files ranked by changed tokens |
 
 ## Configuration
 
-`.pr-rename-review.toml` holds the vocabulary. Data only — the normalization
-and pairing logic stays in Python.
+`.pr-rename-review.toml` holds the pairing vocabulary. Data only — the
+pairing logic stays in Python.
 
-Two ordering rules matter, and they differ:
+**`[pairing].words` is an ordered list.** It is applied as a sequence of
+`str.replace` calls, so the plural must precede the singular. Do not sort it.
 
-- **`[pairing].words` is an ordered list.** It is applied as a sequence of
-  `str.replace` calls, so the plural must precede the singular. Do not sort it.
-- **`[glossary]` tables are unordered.** They are sorted longest-source-first
-  at compile time, stably, so equal-length keys keep table precedence:
-  classes, then words, then columns.
-
-`[glossary.parts]` is component-only vocabulary: it fires inside compound
-identifiers but never as a whole word. `haupt` lives there because
-`Hauptausschreibung` is a glossary row but a bare `haupt` in German prose is
-not a rename.
-
-Two things are asserted at load time, because both fail silently otherwise:
-the glossary must be idempotent (`normalize(normalize(x)) == normalize(x)`),
-and no two old paths may derive the same new path.
+Asserted at pairing time, because it fails silently otherwise: no two old
+paths may derive the same new path.
 
 ## Viewed state
 

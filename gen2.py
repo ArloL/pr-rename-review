@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
-"""Build the side-by-side diff payload for every pair GitHub fails to show."""
+"""Build the side-by-side word-diff payload for every file of the PR."""
 import subprocess, difflib, re, json, html, os, pathlib, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-from config import load_config
-from glossary import build_glossary
 from refs import load
 
-S = pathlib.Path(__file__).parent
-CFG = load_config(S / ".pr-rename-review.toml")
-normalize = build_glossary(CFG.glossary).normalize
 OUT = pathlib.Path(os.environ.get("OUT") or (pathlib.Path(__file__).parent / "build"))
 OUT.mkdir(parents=True, exist_ok=True)
 REPO = os.environ.get("REPO") or subprocess.run(
@@ -30,24 +25,10 @@ def esc(s):
     return html.escape(s)
 
 
-def canon(s):
-    """Case- and underscore-insensitive key. A German word that names both a
-    Java field and a DB column has two right answers (`publicationDate`,
-    `publication_date`); the glossary can only pick one, so a span that
-    differs from its partner by nothing but case convention is the glossary's
-    ambiguity, not a naming decision."""
-    return s.replace("_", "").lower()
-
-
-def wordspans(a, b, normalized):
-    """Word-level spans. In normalized mode a span pair whose *new* side
-    normalizes onto the *old* side is a phantom: German the rename froze on
-    purpose (exception messages, prompt prose, log lines) that only differs
-    because the glossary was applied to one side. Marked, never counted."""
+def wordspans(a, b):
     ta, tb = TOK.findall(a), TOK.findall(b)
     sm = difflib.SequenceMatcher(None, ta, tb, autojunk=False)
     L, R = [], []
-    phantom = 0
     for op, i1, i2, j1, j2 in sm.get_opcodes():
         sa, sb = "".join(ta[i1:i2]), "".join(tb[j1:j2])
         if op == "equal":
@@ -56,13 +37,9 @@ def wordspans(a, b, normalized):
             L.append(("-", sa))
         elif op == "insert":
             R.append(("+", sb))
-        elif normalized and canon(sa) == canon(sb):
-            L.append(("=", sa)); R.append(("=", sb))
-        elif normalized and normalize(sb) == sa:
-            L.append(("~", sa)); R.append(("~", sb)); phantom += 1
         else:
             L.append(("-", sa)); R.append(("+", sb))
-    return L, R, phantom
+    return L, R
 
 
 def render_spans(spans, kind):
@@ -71,17 +48,15 @@ def render_spans(spans, kind):
     for t, s in spans:
         if t == "=":
             out.append(esc(s))
-        elif t == "~":
-            out.append(f'<em class="ph">{esc(s)}</em>')
         else:
             out.append(f'<em class="{cls}">{esc(s)}</em>')
     return "".join(out) or "&nbsp;"
 
 
-def build(old_text, new_text, normalized=False):
+def build(old_text, new_text):
     a, b = old_text.splitlines(), new_text.splitlines()
     sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
-    rows, changed, wordtok, phantoms = [], 0, 0, 0
+    rows, changed, wordtok = [], 0, 0
     ops = sm.get_opcodes()
     for idx, (op, i1, i2, j1, j2) in enumerate(ops):
         if op == "equal":
@@ -104,10 +79,9 @@ def build(old_text, new_text, normalized=False):
                 la = a[i1 + k] if i1 + k < i2 else None
                 lb = b[j1 + k] if j1 + k < j2 else None
                 if la is not None and lb is not None:
-                    L, R, ph = wordspans(la, lb, normalized)
+                    L, R = wordspans(la, lb)
                     real = sum(1 for t, _ in L if t == "-") + sum(1 for t, _ in R if t == "+")
                     wordtok += real
-                    phantoms += ph
                     rows.append(("chg", i1 + k + 1, j1 + k + 1,
                                  render_spans(L, "del"), render_spans(R, "add")))
                     if real:
@@ -122,7 +96,7 @@ def build(old_text, new_text, normalized=False):
         else:
             for k in range(j1, j2):
                 rows.append(("add", None, k + 1, "", esc(b[k]))); changed += 1; wordtok += 1
-    return rows, changed, wordtok, phantoms
+    return rows, changed, wordtok
 
 
 scope = json.load(open(OUT / "scope.json"))
@@ -137,8 +111,7 @@ for r in scope:
         continue
     old, new = r["old"], r["new"]
     o, n = show(BASE, old), show(HEAD, new)
-    raw_rows, raw_c, raw_w, _ = build(o, n)
-    nrm_rows, nrm_c, nrm_w, nrm_ph = build(normalize(o), n, normalized=True)
+    raw_rows, raw_c, raw_w = build(o, n)
     area = ("test" if new.startswith("src/test/java") else
             "fixture" if "/resources/" in new else
             "doc" if new.startswith("docs/") else "main")
@@ -150,19 +123,16 @@ for r in scope:
         # has written since the prototype was split. Always false; the key
         # stays because render2.py still reads it.
         area=area, prev=False,
-        raw=raw_rows, nrm=nrm_rows, raw_c=raw_c, nrm_c=nrm_c,
-        raw_w=raw_w, nrm_w=nrm_w, nrm_ph=nrm_ph, lines=len(n.splitlines())))
+        raw=raw_rows, raw_c=raw_c, raw_w=raw_w, lines=len(n.splitlines())))
 
-files.sort(key=lambda f: -f["nrm_w"])
+files.sort(key=lambda f: -f["raw_w"])
 empties = [r for r in scope if r["identical"] and r["kind"] != "shown"]
 json.dump(dict(files=files, empties=empties), open(OUT / "diffdata2.json", "w"))
 
 print(f"{len(files)} reviewable pairs, {len(empties)} identical-blob shuffles")
-print(f"{'file':44} {'lines':>5} {'raw tok':>8} {'left':>6} {'froz':>5}  {'raw ln':>6} {'left':>5}")
+print(f"{'file':44} {'lines':>5} {'tokens':>7} {'chg ln':>6}")
 for f in files:
-    print(f"{f['newname'][:44]:44} {f['lines']:>5} {f['raw_w']:>8} {f['nrm_w']:>6} "
-          f"{f['nrm_ph']:>5} {f['raw_c']:>6} {f['nrm_c']:>5}")
-print(f"\nTOTAL tokens {sum(f['raw_w'] for f in files)} -> {sum(f['nrm_w'] for f in files)}"
-      f"  (+{sum(f['nrm_ph'] for f in files)} frozen German)")
-print(f"TOTAL lines  {sum(f['raw_c'] for f in files)} -> {sum(f['nrm_c'] for f in files)}")
-print(f"cancel to zero: {sum(1 for f in files if f['nrm_w']==0)}")
+    print(f"{f['newname'][:44]:44} {f['lines']:>5} {f['raw_w']:>7} {f['raw_c']:>6}")
+print(f"\nTOTAL tokens {sum(f['raw_w'] for f in files)}")
+print(f"TOTAL lines  {sum(f['raw_c'] for f in files)}")
+print(f"unchanged beyond the move: {sum(1 for f in files if f['raw_w']==0)}")

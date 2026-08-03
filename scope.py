@@ -42,15 +42,15 @@ for o, n in sorted(canon.items()):
     sim = low[o][1] if o in low and low[o][0] == n else None
     # "shown": GitHub renders this rename correctly. Nothing is hidden, but
     # the tool is the review surface for the whole PR, so it rides along for
-    # the glossary-cancelled view and the viewed tick.
+    # the word-level view and the viewed tick.
     kind = ("shown" if o in gh_ren and gh_ren[o] == n
             else "mispaired" if o in gh_ren else "split")
     rows.append(dict(old=o, new=n, sim=sim, kind=kind,
                      gh_target=gh_ren.get(o), gh_score=gh_score.get(o)))
 
 # Files the rename changed without moving them. GitHub shows these fine --
-# they ride along because the glossary-cancelled word-level view is worth
-# having for every file the rename touched, not because anything is hidden.
+# they ride along because the word-level view is worth having for every file
+# the rename touched, not because anything is hidden.
 # Rename detection cannot change which files are M (it only folds delete+add
 # into R), so -M is inert here; it is present because the no-pathspec lint
 # requires every diff in the passes to carry it.

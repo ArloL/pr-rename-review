@@ -1,13 +1,12 @@
 import hashlib, json, os, pathlib, subprocess, sys
-from config import Config, GlossaryTables, Pairing
+from config import Config, Pairing
 from github import pr_url
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 def cfg(pr=252):
-    return Config(base="main", head="HEAD", pr=pr,
-                  pairing=Pairing(), glossary=GlossaryTables())
+    return Config(base="main", head="HEAD", pr=pr, pairing=Pairing())
 
 
 def test_pr_url_points_at_the_file_in_the_github_diff():
@@ -43,8 +42,8 @@ def _pair(**kw):
                 oldname="Foo.java", newname="Foo.java",
                 oldpkg="src/old", newpkg="src/new",
                 sim=34, kind="split", gh_target=None, gh_score=None,
-                area="main", prev=False, raw=[], nrm=[],
-                raw_c=0, nrm_c=0, raw_w=3, nrm_w=1, nrm_ph=0, lines=10)
+                area="main", prev=False, raw=[],
+                raw_c=0, raw_w=3, lines=10)
     base.update(kw)
     return base
 
@@ -77,3 +76,12 @@ def test_page_carries_the_old_path_of_each_pair(tmp_path):
 def test_page_posts_a_path_list(tmp_path):
     html = _build_page(tmp_path, [_pair()])
     assert "JSON.stringify({paths" in html
+
+
+def test_page_has_no_glossary_ui(tmp_path):
+    """The page is a plain word-level diff: no mode toggle in the bar, no
+    frozen-German legend entry. The glossary was removed as noise."""
+    html = _build_page(tmp_path, [_pair()])
+    assert "Glossary cancelled" not in html
+    assert "frozen German" not in html
+    assert "Raw rename" not in html

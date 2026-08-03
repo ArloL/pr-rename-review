@@ -51,10 +51,8 @@ for f in files:
         "ght": short(f["gh_target"] or "") if f["gh_target"] else None,
         "ghs": f["gh_score"], "area": f["area"], "prev": f["prev"],
         "gh": pr_url(CFG, OWNER, REPO_NAME, f["new"]),
-        "rc": f["raw_c"], "nc": f["nrm_c"], "rw": f["raw_w"], "nw": f["nrm_w"],
-        "ph": f["nrm_ph"], "L": f["lines"],
-        "R": [[r[0], r[1], r[2], r[3], r[4]] for r in f["raw"]],
-        "N": [[r[0], r[1], r[2], r[3], r[4]] for r in f["nrm"]]})
+        "rc": f["raw_c"], "rw": f["raw_w"], "L": f["lines"],
+        "R": [[r[0], r[1], r[2], r[3], r[4]] for r in f["raw"]]})
 
 def evalshort(p):
     return p.replace("src/test/resources/evals/", "").replace("ExpectedOutput/", "")
@@ -65,8 +63,8 @@ EMP = [{"o": evalshort(e["old"]), "n": evalshort(e["new"]),
 
 DATA = json.dumps(compact, separators=(",", ":"))
 EDATA = json.dumps(EMP, separators=(",", ":"))
-maxw = max(c["nw"] for c in compact) or 1
-n_clean = sum(1 for c in compact if c["nw"] == 0)
+maxw = max(c["rw"] for c in compact) or 1
+n_clean = sum(1 for c in compact if c["rw"] == 0)
 n_wrong = sum(1 for c in compact if c["kind"] == "mispaired")
 n_mod = sum(1 for c in compact if c["kind"] == "modified")
 n_shown = sum(1 for c in compact if c["kind"] == "shown")
@@ -76,8 +74,6 @@ n_split = n_pairs - n_wrong - n_mod - n_shown
 n_renames = SUMMARY.get("canon_total", n_pairs)
 n_correct = SUMMARY.get("gh_correct", 0)
 tot_raw = sum(c["rw"] for c in compact)
-tot_nrm = sum(c["nw"] for c in compact)
-tot_ph = sum(c["ph"] for c in compact)
 
 CSS = """
 :root{
@@ -85,7 +81,6 @@ CSS = """
   --rule:#E3E5ED; --accent:#4C4FD4; --accent-soft:#EDEDFA;
   --del-bg:#FDEAEF; --del-mark:#F6BFCC; --del-ink:#96203E;
   --add-bg:#E7F4EB; --add-mark:#ABE2BD; --add-ink:#1A6335;
-  --froz-mark:#F0E2C8; --froz-ink:#77551A;
   --warn:#B4571B; --warn-soft:#FBEEE3;
   --mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
   --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -95,7 +90,6 @@ CSS = """
   --rule:#252A37; --accent:#9294F7; --accent-soft:#1D1F31;
   --del-bg:#33191F; --del-mark:#5D2333; --del-ink:#F2A8BA;
   --add-bg:#12291C; --add-mark:#1E5233; --add-ink:#8AD8A5;
-  --froz-mark:#3A2F16; --froz-ink:#DCC183;
   --warn:#E39152; --warn-soft:#2C1E12;
 }}
 :root[data-theme="dark"]{
@@ -103,7 +97,6 @@ CSS = """
   --rule:#252A37; --accent:#9294F7; --accent-soft:#1D1F31;
   --del-bg:#33191F; --del-mark:#5D2333; --del-ink:#F2A8BA;
   --add-bg:#12291C; --add-mark:#1E5233; --add-ink:#8AD8A5;
-  --froz-mark:#3A2F16; --froz-ink:#DCC183;
   --warn:#E39152; --warn-soft:#2C1E12;
 }
 :root[data-theme="light"]{
@@ -111,7 +104,6 @@ CSS = """
   --rule:#E3E5ED; --accent:#4C4FD4; --accent-soft:#EDEDFA;
   --del-bg:#FDEAEF; --del-mark:#F6BFCC; --del-ink:#96203E;
   --add-bg:#E7F4EB; --add-mark:#ABE2BD; --add-ink:#1A6335;
-  --froz-mark:#F0E2C8; --froz-ink:#77551A;
   --warn:#B4571B; --warn-soft:#FBEEE3;
 }
 *{box-sizing:border-box}
@@ -148,7 +140,6 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--mono);
 .legend i{font-style:normal;padding:1px 6px;border-radius:3px}
 .legend .d{background:var(--del-mark);color:var(--del-ink)}
 .legend .a{background:var(--add-mark);color:var(--add-ink)}
-.legend .f{background:var(--froz-mark);color:var(--froz-ink)}
 .console{display:grid;grid-template-columns:290px minmax(0,1fr);min-height:calc(100vh - 240px)}
 .index{border-right:1px solid var(--rule);background:var(--surface);padding:12px 0;overflow-y:auto}
 .ixhead{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);
@@ -211,7 +202,6 @@ tr.chg td.r,tr.add td.r{background:var(--add-bg)}
 td.l,td.r{border-right:1px solid var(--rule)}
 em.wd{font-style:normal;background:var(--del-mark);color:var(--del-ink);border-radius:2px}
 em.wa{font-style:normal;background:var(--add-mark);color:var(--add-ink);border-radius:2px}
-em.ph{font-style:normal;background:var(--froz-mark);color:var(--froz-ink);border-radius:2px}
 tr.gap td{background:var(--ground);color:var(--ink-3);text-align:center;font-size:10px;
      letter-spacing:.3em;padding:3px 0}
 .empty{padding:26px;font-family:var(--sans);font-size:12.5px;color:var(--ink-2)}
@@ -254,30 +244,18 @@ HTML = f"""<title>The German→English rename — word-level review</title>
   side, failing two ways: {n_split} pairs fall under its 50&#37; rename threshold and render as an
   unrelated delete plus add, and {n_wrong} it <i>does</i> pair — to the <b>wrong file</b>,
   because content similarity picked the partner rather than the name.
-  <br><br><b>Glossary cancelled</b> applies the rename glossary from
-  <code>2026-07-31-german-to-english-rename-design.md</code> to the old file first, so a
-  by-the-book rename produces identical tokens and vanishes. What stays lit is what the glossary
-  does <b>not</b> account for. German the rename deliberately froze — exception messages, prompt
-  prose — is marked separately rather than counted, since applying the glossary to one side only
-  would otherwise invent a difference there.
   <br><br>GitHub's per-file <b>Viewed</b> ticks are read and written through your own
   <code>gh</code> login, so a tick here is a tick on the PR and a tick on the PR shows up here.
   <b>V</b> marks the open file viewed and jumps to the next one; <b>J</b> and <b>K</b> step
   through the list. To comment, follow the ↗ link into GitHub's diff — this page does not write
   comments.</p>
   <div class="tally">
-    <div><div class="k">pairs</div><div class="v">{n_pairs}</div></div>
-    <div><div class="k">raw tokens</div><div class="v">{tot_raw:,}</div></div>
-    <div><div class="k">after glossary</div><div class="v">{tot_nrm:,}</div></div>
-    <div><div class="k">frozen</div><div class="v">{tot_ph}</div></div>
+    <div><div class="k">files</div><div class="v">{n_pairs}</div></div>
+    <div><div class="k">changed tokens</div><div class="v">{tot_raw:,}</div></div>
     <div><div class="k">clean</div><div class="v">{n_clean}</div></div>
   </div>
 </div>
 <div class="bar">
-  <div class="seg" role="group" aria-label="Diff mode">
-    <button id="mN" aria-pressed="true">Glossary cancelled</button>
-    <button id="mR" aria-pressed="false">Raw rename</button>
-  </div>
   <div class="seg" role="group" aria-label="Filter">
     <button class="flt" data-f="all" aria-pressed="true">All {n_pairs}</button>
     <button class="flt" data-f="todo" aria-pressed="false">Unviewed {n_pairs}</button>
@@ -290,7 +268,7 @@ HTML = f"""<title>The German→English rename — word-level review</title>
     <span id="ptxt">0 of {n_pairs} viewed</span>
     <button class="linkbtn" id="reset">reset</button></div>
   <span id="syncst" class="syncst">Checking GitHub…</span>
-  <div class="legend"><i class="d">removed</i><i class="a">added</i><i class="f">frozen German</i></div>
+  <div class="legend"><i class="d">removed</i><i class="a">added</i></div>
 </div>
 <div class="console">
   <nav class="index" aria-label="Files"><div class="ixhead" id="ixh"></div><div id="ix"></div></nav>
@@ -306,7 +284,7 @@ HTML = f"""<title>The German→English rename — word-level review</title>
 </div>
 <script>
 const D={DATA},EMP={EDATA},MAXW={maxw};
-let cur=0,mode='N',flt='all';
+let cur=0,flt='all';
 const ix=document.getElementById('ix'),pane=document.getElementById('pane'),ixh=document.getElementById('ixh');
 
 // Viewed state lives in GitHub, reached through the local server, so a tick
@@ -394,7 +372,7 @@ function drawUnknown(){{
 
 function pass(f){{
   if(flt==='todo')return !isDone(f);
-  if(flt==='work')return (mode==='N'?f.nw:f.rw)>0;
+  if(flt==='work')return f.rw>0;
   if(flt==='hidden')return f.kind==='split'||f.kind==='mispaired';
   if(flt==='wrong')return f.kind==='mispaired';
   if(flt==='mod')return f.kind==='modified';
@@ -409,13 +387,13 @@ function drawProgress(){{
 }}
 function drawIndex(){{
   const v=view();
-  ixh.textContent=`${{v.length}} file${{v.length===1?'':'s'}} · ranked by residual tokens`;
+  ixh.textContent=`${{v.length}} file${{v.length===1?'':'s'}} · ranked by changed tokens`;
   ix.innerHTML=v.map(([f,i])=>{{
-    const w=mode==='N'?f.nw:f.rw, c=mode==='N'?f.nc:f.rc, done=isDone(f);
+    const w=f.rw, c=f.rc, done=isDone(f);
     const tags=(f.kind==='mispaired'?'<span class="tag wrong">wrong pair</span>':'')+
                (f.kind==='modified'?'<span class="tag mod">in place</span>':'')+
                (f.prev?'<span class="tag seen">prev</span>':'')+
-               (mode==='N'&&f.nw===0?'<span class="tag clean">clean</span>':'');
+               (f.rw===0?'<span class="tag clean">clean</span>':'');
     // stopPropagation: without it the link click also fires the row handler.
     const gh=f.gh?`<a class="ghlink" href="${{f.gh}}" target="_blank" rel="noopener"
       onclick="event.stopPropagation()" title="Open in GitHub to comment">↗</a>`:'';
@@ -428,7 +406,7 @@ function drawIndex(){{
 function drawPane(){{
   const f=D[cur];
   if(!f){{pane.innerHTML='<div class="empty">Nothing selected.</div>';return;}}
-  const rows=mode==='N'?f.N:f.R;
+  const rows=f.R;
   const body=rows.map(r=>{{
     if(r[0]==='gap')return '<tr class="gap"><td colspan="4">···</td></tr>';
     const ln=r[1]==null?'':r[1], rn=r[2]==null?'':r[2];
@@ -450,8 +428,7 @@ function drawPane(){{
           place.</div>`)
     : f.kind==='modified'
     ? `<div class="flag">Changed <b>in place</b> — the path never moved, so GitHub shows this
-       diff normally. It is here so the glossary-cancelled view covers every file the rename
-       touched.</div>`
+       diff normally. It is here so the review covers every file the rename touched.</div>`
     : f.kind==='mispaired'
     ? `<div class="flag"><b>GitHub shows this file paired to the wrong partner.</b> It renders
        <code>${{f.on}}</code> → <code>${{f.ght}}</code> at ${{f.ghs}}&#37; similarity. The pairing above is
@@ -463,13 +440,12 @@ function drawPane(){{
           renders there as an unrelated delete plus add. Locally:
           <code>git diff -M${{Math.max(1,f.sim-2)}}% --word-diff</code>, with <b>both</b> paths in the
           pathspec or rename detection silently switches off again.</div>`);
-  const cancelled=f.rw-f.nw-f.ph;
   pane.innerHTML=`<div class="paths">
       ${{f.kind==='modified'
         ? `<span class="new">${{f.nn}}</span>`
         : `<span class="old">${{f.on}}</span><span class="arrow">→</span><span class="new">${{f.nn}}</span>`}}
       <div class="stat">${{f.kind==='modified'?f.np:`${{f.op}} → ${{f.np}}`}}</div>
-      <div class="stat">${{f.L}} lines · ${{mode==='N'?f.nc:f.rc}} changed lines · ${{mode==='N'?f.nw:f.rw}} highlighted tokens${{mode==='N'?` · ${{cancelled}} cancelled by the glossary${{f.ph?` · ${{f.ph}} frozen German`:''}}`:''}}</div>
+      <div class="stat">${{f.L}} lines · ${{f.rc}} changed lines · ${{f.rw}} highlighted tokens</div>
       ${{how}}
       <div class="acts">
         <button class="btn" id="mv">${{isDone(f)?'Next unviewed':'Mark viewed &amp; next'}}</button>
@@ -527,16 +503,12 @@ document.getElementById('reset').onclick=async()=>{{
   for(const id of [...viewed]){{if(viewed.has(id))await setViewed(id,false);}}
   btn.disabled=false;}};
 ix.addEventListener('click',e=>{{const b=e.target.closest('.item');if(!b)return;cur=+b.dataset.i;draw();toTop();}});
-document.getElementById('mN').onclick=()=>{{mode='N';sync();}};
-document.getElementById('mR').onclick=()=>{{mode='R';sync();}};
 document.querySelectorAll('.flt').forEach(b=>b.onclick=()=>{{
   flt=b.dataset.f;
   document.querySelectorAll('.flt').forEach(o=>o.setAttribute('aria-pressed',o===b));
   const v=view();
   if(!v.some(([,i])=>i===cur)&&v.length)cur=v[0][1];
   draw();}});
-function sync(){{document.getElementById('mN').setAttribute('aria-pressed',mode==='N');
-  document.getElementById('mR').setAttribute('aria-pressed',mode==='R');draw();}}
 document.getElementById('emp').innerHTML=EMP.map(e=>
   `<tr><td>${{e.o}}</td><td>→</td><td class="ok">${{e.n}}</td><td>GitHub says → ${{e.g}}</td></tr>`).join('');
 loadViewed();

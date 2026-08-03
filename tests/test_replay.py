@@ -1,10 +1,9 @@
 """The regression gate.
 
-Config extraction is a pure refactor, so any difference between a fresh run
-and the golden fixture is a transcription bug. Comparing per path before
-comparing wholesale is deliberate: a bare `assert rebuilt == golden` on 790 KB
-of JSON produces an unreadable failure, and the value of this test is telling
-you *which* file a dropped glossary entry broke.
+Any difference between a fresh run and the golden fixture is unintended
+drift. Comparing per path before comparing wholesale is deliberate: a bare
+`assert rebuilt == golden` on megabytes of JSON produces an unreadable
+failure, and the value of this test is telling you *which* file broke.
 """
 import json, pathlib
 
@@ -38,15 +37,13 @@ def test_replay_totals(rebuilt):
     assert sum(1 for f in files if f["kind"] == "modified") == 15
     assert sum(1 for f in files if f["kind"] == "shown") == 169
     assert sum(f["raw_w"] for f in files) == 10522
-    assert sum(f["nrm_w"] for f in files) == 2860
-    assert sum(f["nrm_ph"] for f in files) == 1525
-    assert sum(1 for f in files if f["nrm_w"] == 0) == 150
+    assert sum(1 for f in files if f["raw_w"] == 0) == 19
 
 
 def test_replay_includes_files_renamed_in_place(rebuilt):
     """The rename also changes identifiers inside files whose paths never
-    move. GitHub shows those diffs fine, but the glossary-cancelled view is
-    worth having for them too, so they ride along as kind "modified"."""
+    move. GitHub shows those diffs fine, but the word-level view is worth
+    having for them too, so they ride along as kind "modified"."""
     files = {f["new"]: f for f in rebuilt["files"]}
     sched = ("src/main/java/de/haegerconsulting/hsp/events/"
              "EventPublicationScheduler.java")
@@ -58,7 +55,7 @@ def test_replay_includes_files_renamed_in_place(rebuilt):
 def test_replay_includes_renames_github_shows_correctly(rebuilt):
     """Renames over GitHub's 50% threshold render fine there, but the tool
     is the review surface for the whole PR, so they ride along as kind
-    "shown" -- glossary-cancelled view and viewed tick included."""
+    "shown" -- word-level view and viewed tick included."""
     files = {f["new"]: f for f in rebuilt["files"]}
     impl = ("src/main/java/de/haegerconsulting/hsp/tender/domain/users/"
             "UserDirectoryServiceImpl.java")
@@ -67,6 +64,15 @@ def test_replay_includes_renames_github_shows_correctly(rebuilt):
     assert files[impl]["old"] == ("src/main/java/de/haegerconsulting/hsp/"
                                   "ausschreibung/domain/users/"
                                   "UserDirectoryServiceImpl.java")
+
+
+def test_replay_carries_no_glossary_fields(rebuilt):
+    """The payload is a plain word-level diff: no normalized rows, no
+    frozen-German counts. The glossary was removed as noise -- the plain
+    diff tracks the renames closely enough."""
+    for f in rebuilt["files"]:
+        for key in ("nrm", "nrm_c", "nrm_w", "nrm_ph"):
+            assert key not in f
 
 
 def test_replay_keeps_pure_moves_tickable(rebuilt):
