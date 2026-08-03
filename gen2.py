@@ -127,9 +127,13 @@ def build(old_text, new_text, normalized=False):
 
 scope = json.load(open(OUT / "scope.json"))
 
+# A "shown" pair with identical blobs is a pure move: nothing to word-review,
+# but GitHub lists it and it needs its Viewed tick, so it stays a file with an
+# empty diff. Identical split/mispaired pairs are the zero-byte eval shuffles
+# the empties table explains.
 files = []
 for r in scope:
-    if r["identical"]:
+    if r["identical"] and r["kind"] != "shown":
         continue
     old, new = r["old"], r["new"]
     o, n = show(BASE, old), show(HEAD, new)
@@ -150,7 +154,7 @@ for r in scope:
         raw_w=raw_w, nrm_w=nrm_w, nrm_ph=nrm_ph, lines=len(n.splitlines())))
 
 files.sort(key=lambda f: -f["nrm_w"])
-empties = [r for r in scope if r["identical"]]
+empties = [r for r in scope if r["identical"] and r["kind"] != "shown"]
 json.dump(dict(files=files, empties=empties), open(OUT / "diffdata2.json", "w"))
 
 print(f"{len(files)} reviewable pairs, {len(empties)} identical-blob shuffles")

@@ -27,16 +27,20 @@ def test_replay_matches_golden(rebuilt):
 def test_replay_totals(rebuilt):
     """Measured at 52efff3...1ce7bfa. These move whenever the branch moves,
     so they are asserted against the pinned baseline, not against the
-    historical figures in the design doc. 62 of the files are rename pairs;
-    the other 15 changed in place."""
+    historical figures in the design doc. 62 of the files are pairs GitHub
+    hides, 169 are renames it shows correctly (19 of them pure moves), and
+    15 changed in place."""
     files = rebuilt["files"]
-    assert len(files) == 77
+    assert len(files) == 246
     assert len(rebuilt["empties"]) == 11
+    assert sum(1 for f in files if f["kind"] == "split") == 59
+    assert sum(1 for f in files if f["kind"] == "mispaired") == 3
     assert sum(1 for f in files if f["kind"] == "modified") == 15
-    assert sum(f["raw_w"] for f in files) == 5955
-    assert sum(f["nrm_w"] for f in files) == 1902
-    assert sum(f["nrm_ph"] for f in files) == 461
-    assert sum(1 for f in files if f["nrm_w"] == 0) == 27
+    assert sum(1 for f in files if f["kind"] == "shown") == 169
+    assert sum(f["raw_w"] for f in files) == 10522
+    assert sum(f["nrm_w"] for f in files) == 2860
+    assert sum(f["nrm_ph"] for f in files) == 1525
+    assert sum(1 for f in files if f["nrm_w"] == 0) == 150
 
 
 def test_replay_includes_files_renamed_in_place(rebuilt):
@@ -49,6 +53,28 @@ def test_replay_includes_files_renamed_in_place(rebuilt):
     assert sched in files
     assert files[sched]["kind"] == "modified"
     assert files[sched]["old"] == sched
+
+
+def test_replay_includes_renames_github_shows_correctly(rebuilt):
+    """Renames over GitHub's 50% threshold render fine there, but the tool
+    is the review surface for the whole PR, so they ride along as kind
+    "shown" -- glossary-cancelled view and viewed tick included."""
+    files = {f["new"]: f for f in rebuilt["files"]}
+    impl = ("src/main/java/de/haegerconsulting/hsp/tender/domain/users/"
+            "UserDirectoryServiceImpl.java")
+    assert impl in files
+    assert files[impl]["kind"] == "shown"
+    assert files[impl]["old"] == ("src/main/java/de/haegerconsulting/hsp/"
+                                  "ausschreibung/domain/users/"
+                                  "UserDirectoryServiceImpl.java")
+
+
+def test_replay_keeps_pure_moves_tickable(rebuilt):
+    """A file moved without a content change has nothing to word-review,
+    but GitHub still lists it and it still needs its Viewed tick, so it
+    stays in the list with an empty diff rather than falling out."""
+    assert any(f["kind"] == "shown" and f["raw_w"] == 0
+               and f["old"] != f["new"] for f in rebuilt["files"])
 
 
 def _pairing_only(report):

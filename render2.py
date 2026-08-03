@@ -69,9 +69,10 @@ maxw = max(c["nw"] for c in compact) or 1
 n_clean = sum(1 for c in compact if c["nw"] == 0)
 n_wrong = sum(1 for c in compact if c["kind"] == "mispaired")
 n_mod = sum(1 for c in compact if c["kind"] == "modified")
+n_shown = sum(1 for c in compact if c["kind"] == "shown")
 n_prev = sum(1 for c in compact if c["prev"])
 n_pairs = len(compact)
-n_split = n_pairs - n_wrong - n_mod
+n_split = n_pairs - n_wrong - n_mod - n_shown
 n_renames = SUMMARY.get("canon_total", n_pairs)
 n_correct = SUMMARY.get("gh_correct", 0)
 tot_raw = sum(c["rw"] for c in compact)
@@ -242,17 +243,17 @@ td.gut a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 #unk ul{margin:8px 0 0 18px;font-family:var(--mono);font-size:12px}
 """
 
-HTML = f"""<title>Renames GitHub hides — word-level review</title>
+HTML = f"""<title>The German→English rename — word-level review</title>
 <style>{CSS}</style>
 <div class="masthead">
-  <h1>Renames GitHub hides · word-level review</h1>
+  <h1>The German→English rename · word-level review</h1>
   <p class="sub">{REFS["head_ref"]} <span class="sha">{HEAD_SHORT}</span> &nbsp;·&nbsp; forked from {REFS["base_ref"]} at <span class="sha">{BASE_SHORT}</span> &nbsp;·&nbsp; {n_renames} renames total, {n_correct} of them GitHub shows correctly &nbsp;·&nbsp; {n_mod} files changed in place</p>
-  <p class="note">Most pairs here are ones GitHub's diff does <b>not</b> put side by side. It fails
-  two ways: {n_split} pairs fall under its 50&#37; rename threshold and render as an unrelated
-  delete plus add, and {n_wrong} it <i>does</i> pair — to the <b>wrong file</b>, because content
-  similarity picked the partner rather than the name. A further {n_mod} files changed <b>in
-  place</b> — GitHub shows those fine, but the glossary-cancelled view applies all the same, so
-  they are in the list too.
+  <p class="note">Every file the PR touches is here. GitHub shows {n_shown} of the renames
+  correctly; those and the {n_mod} files changed <b>in place</b> ride along so the whole PR can
+  be reviewed and ticked in one spot. The rest is what GitHub's diff does <b>not</b> put side by
+  side, failing two ways: {n_split} pairs fall under its 50&#37; rename threshold and render as an
+  unrelated delete plus add, and {n_wrong} it <i>does</i> pair — to the <b>wrong file</b>,
+  because content similarity picked the partner rather than the name.
   <br><br><b>Glossary cancelled</b> applies the rename glossary from
   <code>2026-07-31-german-to-english-rename-design.md</code> to the old file first, so a
   by-the-book rename produces identical tokens and vanishes. What stays lit is what the glossary
@@ -281,6 +282,7 @@ HTML = f"""<title>Renames GitHub hides — word-level review</title>
     <button class="flt" data-f="all" aria-pressed="true">All {n_pairs}</button>
     <button class="flt" data-f="todo" aria-pressed="false">Unviewed {n_pairs}</button>
     <button class="flt" data-f="work" aria-pressed="false">Needs a look {n_pairs - n_clean}</button>
+    <button class="flt" data-f="hidden" aria-pressed="false">Hidden {n_split + n_wrong}</button>
     <button class="flt" data-f="wrong" aria-pressed="false">Wrong pair {n_wrong}</button>
     <button class="flt" data-f="mod" aria-pressed="false">In place {n_mod}</button>
   </div>
@@ -393,6 +395,7 @@ function drawUnknown(){{
 function pass(f){{
   if(flt==='todo')return !isDone(f);
   if(flt==='work')return (mode==='N'?f.nw:f.rw)>0;
+  if(flt==='hidden')return f.kind==='split'||f.kind==='mispaired';
   if(flt==='wrong')return f.kind==='mispaired';
   if(flt==='mod')return f.kind==='modified';
   return true;
@@ -438,7 +441,14 @@ function drawPane(){{
     return `<tr class="${{r[0]}}"><td class="gut">${{ln}}</td><td class="l">${{r[3]||'&nbsp;'}}</td>`+
            `<td class="gut">${{rcell}}</td><td class="r">${{r[4]||'&nbsp;'}}</td></tr>`;
   }}).join('');
-  const how=f.kind==='modified'
+  const how=f.kind==='shown'
+    ? (f.rw===0
+       ? `<div class="flag">A pure move — the content is identical, so beyond the new path there
+          is nothing to review. GitHub shows the rename correctly.</div>`
+       : `<div class="flag">GitHub pairs this rename correctly${{f.ghs?` at ${{f.ghs}}&#37;
+          similarity`:''}} — nothing hidden; it is here so the whole PR reviews in one
+          place.</div>`)
+    : f.kind==='modified'
     ? `<div class="flag">Changed <b>in place</b> — the path never moved, so GitHub shows this
        diff normally. It is here so the glossary-cancelled view covers every file the rename
        touched.</div>`

@@ -40,9 +40,11 @@ for ln in subprocess.run(["git", "diff", "-M01%", "-l50000", "--name-status", f"
 rows = []
 for o, n in sorted(canon.items()):
     sim = low[o][1] if o in low and low[o][0] == n else None
-    if o in gh_ren and gh_ren[o] == n:
-        continue                              # GitHub shows it correctly - out of scope
-    kind = "mispaired" if o in gh_ren else "split"
+    # "shown": GitHub renders this rename correctly. Nothing is hidden, but
+    # the tool is the review surface for the whole PR, so it rides along for
+    # the glossary-cancelled view and the viewed tick.
+    kind = ("shown" if o in gh_ren and gh_ren[o] == n
+            else "mispaired" if o in gh_ren else "split")
     rows.append(dict(old=o, new=n, sim=sim, kind=kind,
                      gh_target=gh_ren.get(o), gh_score=gh_score.get(o)))
 
@@ -82,18 +84,20 @@ renames = [r for r in rows if r["kind"] != "modified"]
 json.dump(rows, open(OUT / "scope.json", "w"), indent=1)
 # Counts the page needs but cannot derive from diffdata2.json, which only
 # carries the in-scope pairs. Separate file so diffdata2.json keeps its shape.
-json.dump(dict(canon_total=len(canon), gh_correct=len(canon) - len(renames),
+json.dump(dict(canon_total=len(canon),
+               gh_correct=sum(1 for r in rows if r["kind"] == "shown"),
                in_scope=len(rows),
                split=sum(1 for r in rows if r["kind"] == "split"),
                mispaired=sum(1 for r in rows if r["kind"] == "mispaired"),
-               modified=sum(1 for r in rows if r["kind"] == "modified")),
+               modified=sum(1 for r in rows if r["kind"] == "modified"),
+               shown=sum(1 for r in rows if r["kind"] == "shown")),
           open(OUT / "scope-summary.json", "w"), indent=1)
 with open(OUT / "pairs2.tsv", "w") as fh:
     for r in renames:
         fh.write(f"{r['old']}\t{r['new']}\n")
 
 print(f"canonical pairs total      : {len(canon)}")
-print(f"GitHub shows correctly     : {len(canon) - len(renames)}")
+print(f"GitHub shows correctly     : {sum(1 for r in rows if r['kind']=='shown')}")
 print(f"IN SCOPE                   : {len(rows)}")
 print(f"  shown as add+delete      : {sum(1 for r in rows if r['kind']=='split')}")
 print(f"  renamed in place (M)     : {sum(1 for r in rows if r['kind']=='modified')}")
