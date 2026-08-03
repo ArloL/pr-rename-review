@@ -6,11 +6,17 @@
 # renames or Database renames tables, or a case variant of one.
 
 [repo]
-base = "52efff3"
-# Pinned to a commit, not to origin/refactor/german-to-english-rename. That
-# ref moves, and a moving baseline silently changes every measured number.
-# Bump this deliberately when you want to review a newer state of the branch.
-head = "1ce7bfa"
+# Both refs move on purpose: the point of the tool is to review the PR as it
+# is now, so a push plus a fetch has to show up on the page. What keeps that
+# safe is refs.py resolving `base` to `git merge-base base head` -- against the
+# branch tip, commits main gained since the fork would appear inside the review.
+# The page prints the commit it actually built from, so a missing fetch is
+# visible rather than silent.
+#
+# The regression baseline is pinned separately, in tests/conftest.py. Pinning
+# it there is what lets these move.
+base = "origin/main"
+head = "origin/refactor/german-to-english-rename"
 pr = 252
 
 [pairing]

@@ -55,6 +55,19 @@ def anchor(path, line=None):
     return f"{frag}R{line}" if line else frag
 
 
+def pr_url(cfg, owner, repo, path, line=None):
+    """Deep link into GitHub's own diff. Commenting happens there -- this tool
+    does not write comments, by design.
+
+    Here rather than in render2.py because it is a pure function of its
+    arguments, and render2.py cannot be imported without a build directory.
+    """
+    if not (cfg.pr and owner and repo):
+        return None
+    return (f"https://github.com/{owner}/{repo}/pull/{cfg.pr}/files"
+            f"{anchor(path, line)}")
+
+
 def _graphql(run, query, **variables):
     # In `gh api`, --field is TYPED (numbers and booleans are converted) and
     # --raw-field is always a string. An Int! variable therefore needs

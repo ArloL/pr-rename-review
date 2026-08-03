@@ -6,10 +6,11 @@ Pairing by name rather than by content is the whole point: below git's 50%
 rename threshold, content similarity starts pairing files that merely have the
 same shape, and a confidently wrong pairing is worse than no pairing.
 """
-import os, pathlib, subprocess, sys
+import json, os, pathlib, subprocess, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from config import load_config
+from refs import resolve, short
 
 S = pathlib.Path(__file__).resolve().parent
 OUT = pathlib.Path(os.environ.get("OUT") or (S / "build"))
@@ -62,11 +63,14 @@ def tree(repo, ref):
 def git_pairing(repo, base, head):
     """git's own low-threshold opinion. -l50000 defeats the default rename
     limit, which is well below the size of a repo-wide rename. No pathspec:
-    filtering by the new path silently disables rename detection."""
+    filtering by the new path silently disables rename detection.
+
+    Two dots, not three: `base` arrives already resolved to the merge base.
+    """
     pairs, adds, dels = {}, [], []
     for ln in subprocess.run(
             ["git", "diff", "-M01%", "-l50000", "--name-status",
-             f"{base}...{head}"],
+             f"{base}..{head}"],
             capture_output=True, text=True, cwd=repo).stdout.splitlines():
         f = ln.split("\t")
         if f[0].startswith("R"):
@@ -83,10 +87,19 @@ def main():
     repo = os.environ.get("REPO") or subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
         capture_output=True, text=True).stdout.strip()
-    base = os.environ.get("BASE", cfg.base)
-    head = os.environ.get("HEAD_REF", cfg.head)
+    base_ref = os.environ.get("BASE", cfg.base)
+    head_ref = os.environ.get("HEAD_REF", cfg.head)
+    base, head = resolve(repo, base_ref, head_ref)
 
     OUT.mkdir(parents=True, exist_ok=True)
+    # The commits every later pass must use. A separate file rather than a key
+    # in diffdata2.json, for the reason scope-summary.json is separate: that
+    # payload's shape is the replay contract.
+    json.dump(dict(base_ref=base_ref, head_ref=head_ref, base=base, head=head),
+              open(OUT / "refs.json", "w"), indent=1)
+    print(f"reviewing {head_ref} ({short(repo, head)}) "
+          f"against merge base {short(repo, base)} of {base_ref}")
+
     head_tree = tree(repo, head)
     git_pair, adds, dels = git_pairing(repo, base, head)
 

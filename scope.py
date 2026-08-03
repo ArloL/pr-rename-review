@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """Work out which canonical pairs GitHub fails to show, and how it fails."""
-import subprocess, os, pathlib, json
+import subprocess, os, pathlib, json, sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from refs import load
 
 SP = os.path.dirname(os.path.abspath(__file__))
 OUT = pathlib.Path(os.environ.get("OUT") or (pathlib.Path(__file__).parent / "build"))
 OUT.mkdir(parents=True, exist_ok=True)
 REPO = os.environ.get("REPO") or subprocess.run(
     ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
-BASE = os.environ.get("BASE", "main")
-HEAD = os.environ.get("HEAD_REF", "HEAD")
+# Resolved by pairup.py, not re-derived here: one run reviews one pair of
+# commits, and BASE is the merge base rather than the base branch's tip.
+_refs = load(OUT)
+BASE, HEAD = _refs["base"], _refs["head"]
 
 canon = {}
 for ln in open(OUT / "canonical-pairs.tsv"):
@@ -17,7 +22,7 @@ for ln in open(OUT / "canonical-pairs.tsv"):
 
 # what GitHub itself renders: -M50%, its default rename threshold
 gh_ren, gh_score = {}, {}
-for ln in subprocess.run(["git", "diff", "-M50%", "-l50000", "--name-status", f"{BASE}...{HEAD}"],
+for ln in subprocess.run(["git", "diff", "-M50%", "-l50000", "--name-status", f"{BASE}..{HEAD}"],
                          capture_output=True, text=True, cwd=REPO).stdout.splitlines():
     f = ln.split("\t")
     if f[0].startswith("R"):
@@ -26,7 +31,7 @@ for ln in subprocess.run(["git", "diff", "-M50%", "-l50000", "--name-status", f"
 
 # git's low-threshold opinion, for reporting the true similarity
 low = {}
-for ln in subprocess.run(["git", "diff", "-M01%", "-l50000", "--name-status", f"{BASE}...{HEAD}"],
+for ln in subprocess.run(["git", "diff", "-M01%", "-l50000", "--name-status", f"{BASE}..{HEAD}"],
                          capture_output=True, text=True, cwd=REPO).stdout.splitlines():
     f = ln.split("\t")
     if f[0].startswith("R"):

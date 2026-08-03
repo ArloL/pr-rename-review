@@ -22,12 +22,18 @@ def test_build_accepts_ref_overrides(monkeypatch):
 
 
 def test_refs_default_to_config(monkeypatch):
+    """Config values reach the passes. Asserted against the config rather than
+    against literal refs: [repo] names moving refs now, and a test that pins
+    them would fail every time the tool is aimed at a different PR."""
+    from config import load_config
+    from cli import ROOT
+    cfg = load_config(ROOT / ".pr-rename-review.toml")
     seen = {}
     monkeypatch.setattr("cli.run_passes",
                         lambda passes, env: seen.update(env) or 0)
     main(["build"])
-    assert seen["BASE"] == "52efff3"
-    assert seen["HEAD_REF"] == "1ce7bfa"
+    assert seen["BASE"] == cfg.base
+    assert seen["HEAD_REF"] == cfg.head
 
 
 def test_pairs_runs_only_the_pairing_pass(monkeypatch):

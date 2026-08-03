@@ -2,7 +2,8 @@ import json, os, pathlib, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from config import load_config
-from github import GitHubError, anchor, resolve_repo, resolve_target
+from github import GitHubError, anchor, pr_url, resolve_repo, resolve_target
+from refs import load
 
 S = pathlib.Path(__file__).parent
 OUT = pathlib.Path(os.environ.get("OUT") or (pathlib.Path(__file__).parent / "build"))
@@ -11,6 +12,11 @@ blob = json.loads((OUT / "diffdata2.json").read_text())
 files, empties = blob["files"], blob["empties"]
 
 CFG = load_config(S / ".pr-rename-review.toml")
+# From the run, never from CFG: with a moving head ref the ref name alone is
+# true of every build ever made, and `--base`/`--head` overrides do not reach
+# CFG at all. Printing the commit is what makes a stale page look stale.
+REFS = load(OUT)
+BASE_SHORT, HEAD_SHORT = REFS["base"][:9], REFS["head"][:9]
 SUMMARY = json.loads((OUT / "scope-summary.json").read_text()) if (
     OUT / "scope-summary.json").exists() else {}
 
@@ -21,14 +27,6 @@ try:
 except (GitHubError, KeyError):
     OWNER = REPO_NAME = None
 
-
-def pr_url(cfg, owner, repo, path, line=None):
-    """Deep link into GitHub's own diff. Commenting happens there -- this tool
-    does not write comments, by design."""
-    if not (cfg.pr and owner and repo):
-        return None
-    return (f"https://github.com/{owner}/{repo}/pull/{cfg.pr}/files"
-            f"{anchor(path, line)}")
 
 PFX = [("src/main/java/de/haegerconsulting/hsp/", "main·"),
        ("src/test/java/de/haegerconsulting/hsp/", "test·"),
@@ -118,6 +116,7 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--mono);
 .masthead{border-bottom:1px solid var(--rule);background:var(--surface);padding:22px 26px 18px}
 .masthead h1{margin:0;font-size:15px;font-weight:650;letter-spacing:-.01em;text-wrap:balance}
 .sub{margin:5px 0 0;font-size:11.5px;color:var(--ink-3);letter-spacing:.02em}
+.sub .sha{font-family:var(--mono);opacity:.75}
 .note{font-family:var(--sans);font-size:12.5px;line-height:1.62;color:var(--ink-2);
       max-width:70ch;margin:14px 0 0}
 .note b{color:var(--ink);font-weight:600}
@@ -243,7 +242,7 @@ HTML = f"""<title>Renames GitHub hides — word-level review</title>
 <style>{CSS}</style>
 <div class="masthead">
   <h1>Renames GitHub hides · word-level review</h1>
-  <p class="sub">{CFG.head} &nbsp;·&nbsp; base {CFG.base} &nbsp;·&nbsp; {n_renames} renames total, {n_correct} of them GitHub shows correctly</p>
+  <p class="sub">{REFS["head_ref"]} <span class="sha">{HEAD_SHORT}</span> &nbsp;·&nbsp; forked from {REFS["base_ref"]} at <span class="sha">{BASE_SHORT}</span> &nbsp;·&nbsp; {n_renames} renames total, {n_correct} of them GitHub shows correctly</p>
   <p class="note">Every pair here is one GitHub's diff does <b>not</b> put side by side. It fails
   two ways: {n_pairs - n_wrong} pairs fall under its 50&#37; rename threshold and render as an unrelated
   delete plus add, and {n_wrong} it <i>does</i> pair — to the <b>wrong file</b>, because content

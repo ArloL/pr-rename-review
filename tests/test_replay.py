@@ -37,14 +37,17 @@ def test_replay_totals(rebuilt):
     assert sum(1 for f in files if f["nrm_w"] == 0) == 22
 
 
-def _without_paths(report):
-    """Drop the trailing `wrote <abs path>` line -- OUT differs between the
-    captured fixture and the test's scratch directory."""
-    return [ln for ln in report.splitlines() if not ln.startswith("wrote ")]
+def _pairing_only(report):
+    """Drop the lines that describe the run rather than the pairing: `wrote
+    <abs path>` (OUT differs between the fixture and the test's scratch dir)
+    and `reviewing <ref> ...` (names the commits under review). The golden
+    records what the pass decides, not what it was pointed at."""
+    return [ln for ln in report.splitlines()
+            if not ln.startswith(("wrote ", "reviewing "))]
 
 
 def test_pairing_report_matches_golden(pair_report):
-    assert _without_paths(pair_report) == _without_paths(
+    assert _pairing_only(pair_report) == _pairing_only(
         (GOLDEN / "pair.log").read_text())
 
 

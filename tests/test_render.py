@@ -1,6 +1,6 @@
 import hashlib
 from config import Config, GlossaryTables, Pairing
-from render2 import pr_url
+from github import pr_url
 
 
 def cfg(pr=252):

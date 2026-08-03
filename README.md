@@ -87,11 +87,25 @@ leaving a file marked reviewed that nobody reviewed.
 GitHub's own diff; comment there. This is a deliberate non-goal — see the
 spec's "Commenting" section for why, and for what would justify changing it.
 
+## Which commits get reviewed
+
+`[repo].base` and `[repo].head` name **moving** refs — `origin/main` and the PR
+branch — because the point is to review the PR as it stands. Push, fetch, run
+again, and the new commits are there.
+
+The base is resolved to `git merge-base base head`, never to the base branch's
+tip. Against the tip, every commit `main` gained since the fork would show up
+inside the review as if the PR had made it. The page prints the commits it
+actually built from, so a build made before a fetch looks stale rather than
+passing for current.
+
 ## Baseline
 
-Against the **pinned** `BASE=52efff3 HEAD_REF=1ce7bfa` (PR #252): 242 renames,
-21 pairing disagreements, 62 reviewable pairs plus 11 identical-blob shuffles,
-5,187 → 1,489 residual tokens, 181 frozen, 22 files cancelling to zero.
+The regression baseline is pinned separately, in `tests/conftest.py`, which is
+what lets the config refs move. Against `BASE=52efff3 HEAD_REF=1ce7bfa`
+(PR #252): 242 renames, 21 pairing disagreements, 62 reviewable pairs plus 11
+identical-blob shuffles, 5,187 → 1,489 residual tokens, 181 frozen, 22 files
+cancelling to zero.
 
 ```sh
 REPO=/path/to/the/checkout uv run pytest

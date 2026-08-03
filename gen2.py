@@ -5,6 +5,7 @@ import subprocess, difflib, re, json, html, os, pathlib, sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from config import load_config
 from glossary import build_glossary
+from refs import load
 
 S = pathlib.Path(__file__).parent
 CFG = load_config(S / ".pr-rename-review.toml")
@@ -13,8 +14,10 @@ OUT = pathlib.Path(os.environ.get("OUT") or (pathlib.Path(__file__).parent / "bu
 OUT.mkdir(parents=True, exist_ok=True)
 REPO = os.environ.get("REPO") or subprocess.run(
     ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
-BASE = os.environ.get("BASE", "main")
-HEAD = os.environ.get("HEAD_REF", "HEAD")
+# Resolved by pairup.py. BASE being the merge base is what makes `show(BASE, ..)`
+# below read the old file as the PR forked it, not as the base branch has it now.
+_refs = load(OUT)
+BASE, HEAD = _refs["base"], _refs["head"]
 TOK = re.compile(r"[A-Za-z0-9_]+|\s+|[^\sA-Za-z0-9_]")
 
 
