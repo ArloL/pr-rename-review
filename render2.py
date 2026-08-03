@@ -460,7 +460,11 @@ function step(d){{
 }}
 function nextTodo(){{
   const v=view().filter(([f,i])=>i!==cur&&!isDone(f));
-  if(v.length){{cur=v[0][1];draw();toTop();}}else{{draw();}}
+  if(!v.length){{draw();return;}}
+  // The next unviewed file below the current one, wrapping to the top only
+  // when everything below is already done.
+  const nxt=v.find(([,i])=>i>cur)||v[0];
+  cur=nxt[1];draw();toTop();
 }}
 function bindActions(){{
   const mv=document.getElementById('mv');
