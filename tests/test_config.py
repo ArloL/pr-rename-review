@@ -109,10 +109,10 @@ def test_empty_defaults_are_usable(tmp_path):
 
 
 def test_the_real_config_loads():
-    """The shipped config must parse and carry the PR #252 vocabulary."""
+    """The shipped config must parse and carry the rename vocabulary."""
     import pathlib
     cfg = load_config(pathlib.Path(__file__).resolve().parent.parent
                       / ".pr-rename-review.toml")
-    assert cfg.pr == 252
+    assert cfg.pr == 259
     assert cfg.glossary.words["Ausschreibung"] == "Tender"
     assert cfg.pairing.dir_scope == "/evals/"

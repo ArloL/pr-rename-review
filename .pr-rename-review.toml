@@ -1,4 +1,5 @@
-# Vocabulary for the German-to-English rename on PR #252.
+# Vocabulary for the German-to-English rename on PR #259 (the reworked #252,
+# stacked on the #258 prep branch).
 #
 # Data only -- the normalization and pairing logic lives in glossary.py and
 # pairup.py. Generated from the prototype's hardcoded tables; every entry is
@@ -15,9 +16,9 @@
 #
 # The regression baseline is pinned separately, in tests/conftest.py. Pinning
 # it there is what lets these move.
-base = "origin/main"
-head = "origin/refactor/german-to-english-rename"
-pr = 252
+base = "origin/refactor/german-rename-prep"
+head = "origin/refactor/german-to-english-rename-v2"
+pr = 259
 
 [pairing]
 # Applied to directory segments before the basename rules.
@@ -246,5 +247,6 @@ haupt = "Main"
 
 [glossary.rules]
 # Ordered regex pass, applied before the identifier mapping. Empty for
-# PR #252: the word tables cover it. Present so the shape is documented.
+# PR #259, as it was for #252: the word tables cover it. Present so the
+# shape is documented.
 patterns = []
