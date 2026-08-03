@@ -251,7 +251,12 @@ td.gut a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 #unk ul{margin:8px 0 0 18px;font-family:var(--mono);font-size:12px}
 """
 
-HTML = f"""<title>The German→English rename — word-level review</title>
+# The page names its own encoding rather than relying on the server's
+# Content-Type. server.py sends `charset=utf-8`, but the file is also opened
+# straight from `build/` and served by other static servers, and without this
+# the arrows and em dashes come out as mojibake wherever the header is absent.
+HTML = f"""<meta charset="utf-8">
+<title>The German→English rename — word-level review</title>
 <style>{CSS}</style>
 <div class="masthead">
   <h1>The German→English rename · word-level review</h1>

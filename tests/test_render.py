@@ -108,6 +108,16 @@ def test_page_summary_omits_a_clause_with_nothing_to_describe(tmp_path):
     assert "the 1 the PR <b>adds</b>" in html
 
 
+def test_page_declares_its_own_encoding(tmp_path):
+    """server.py sends `charset=utf-8`, but the page is also opened straight
+    out of `build/` and served by other static servers. Without the meta tag
+    the arrows and em dashes come out as mojibake wherever the header is
+    absent, which is a broken-looking page for a reason nothing on it
+    explains."""
+    html = _build_page(tmp_path, [_pair()])
+    assert html.startswith('<meta charset="utf-8">')
+
+
 def test_page_has_no_glossary_ui(tmp_path):
     """The page is a plain word-level diff: no mode toggle in the bar, no
     frozen-German legend entry. The glossary was removed as noise."""
