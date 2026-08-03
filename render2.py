@@ -445,7 +445,15 @@ function drawPane(){{
     <div class="wrap"><table class="diff"><colgroup><col class="g"><col><col class="g"><col></colgroup><tbody>${{body}}</tbody></table></div>`;
 }}
 function draw(){{drawIndex();drawPane();drawProgress();drawUnknown();bindActions();}}
-function toTop(){{document.querySelector('.pane').scrollTop=0;}}
+function toTop(){{
+  document.querySelector('.pane').scrollTop=0;
+  // The columns scroll with the document, not internally, so selecting a file
+  // far down the index would otherwise land mid-diff. Scroll the window back
+  // up until the content view sits just under the sticky bar.
+  const top=document.querySelector('.console').getBoundingClientRect().top
+            +window.scrollY-document.querySelector('.bar').offsetHeight;
+  if(window.scrollY>top)window.scrollTo(0,top);
+}}
 function step(d){{
   const v=view(); if(!v.length)return;
   let at=v.findIndex(([,i])=>i===cur);
