@@ -40,4 +40,6 @@ collisions          : []
      true src/main/java/de/haegerconsulting/hsp/tender/rest/package-info.java
 total disagreements: 10
 
-wrote /private/tmp/claude-502/-Users-arlookeeffe-Developer-pr-rename-review/e999f0f0-d044-4640-a977-03a3d9277a37/scratchpad/golden-rebuild/canonical-pairs.tsv
+wrote /private/tmp/claude-502/-Users-arlookeeffe-Developer-pr-rename-review/7f3fcf64-8caf-472e-bba9-f3b5b735b13d/scratchpad/base2/canonical-pairs.tsv
+wrote /private/tmp/claude-502/-Users-arlookeeffe-Developer-pr-rename-review/7f3fcf64-8caf-472e-bba9-f3b5b735b13d/scratchpad/base2/new-files.txt
+wrote /private/tmp/claude-502/-Users-arlookeeffe-Developer-pr-rename-review/7f3fcf64-8caf-472e-bba9-f3b5b735b13d/scratchpad/base2/deleted-files.txt

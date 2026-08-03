@@ -38,9 +38,9 @@ output that found the mispairings in the first place — and needs no browser.
 
 | Script | Pass | Does |
 |---|---|---|
-| `pairup.py` | 1 | Pairs old→new from the branch's **recorded moves** (exact per-commit renames), falls back to git's endpoint similarity, reports every disagreement |
-| `scope.py` | 1b | Works out how GitHub presents each pair, and which have identical blobs |
-| `gen2.py` | 3 | Word-diffs each pair |
+| `pairup.py` | 1 | Pairs old→new from the branch's **recorded moves** (exact per-commit renames), falls back to git's endpoint similarity, reports every disagreement, and names the files the PR only adds or only deletes |
+| `scope.py` | 1b | Works out how GitHub presents each pair, folds in the files changed in place and the one-sided ones, and marks which have identical blobs |
+| `gen2.py` | 3 | Word-diffs each file |
 | `render2.py` | 4 | Emits the page, files ranked by changed tokens |
 
 Pairing needs no vocabulary: keep the renames in their own commit (`git mv`,
@@ -88,10 +88,19 @@ passing for current.
 ## Baseline
 
 The regression baseline is pinned separately, in `tests/conftest.py`, which is
-what lets the config refs move. Against `BASE=52efff3 HEAD_REF=1ce7bfa`
-(PR #252): 242 renames, 21 pairing disagreements, 62 reviewable pairs plus 11
-identical-blob shuffles, 5,187 → 1,489 residual tokens, 181 frozen, 22 files
-cancelling to zero.
+what lets the config refs move. Against `BASE=eb1b00665 HEAD_REF=47c9dc7`
+(PR #259): 244 recorded moves, 10 pairing disagreements, 261 files in the
+review — 59 that GitHub splits into a delete plus an add, 3 it pairs to the
+wrong partner, 182 renames it shows correctly, 15 changed in place and 2 the
+PR adds outright — 11,879 changed tokens, 30 files with nothing to review
+beyond the move.
+
+The baseline has **no deletions**: on a rename branch git pairs nearly every
+removal with an addition, so the one-sided-delete path has no coverage there.
+`tests/test_whole_pr.py` builds throwaway repositories that hold exactly one
+deletion, or exactly one addition, and runs the passes over them — the add
+and the delete live in separate repositories on purpose, because put both in
+one and git's 1% rename detection is free to pair them with each other.
 
 ```sh
 REPO=/path/to/the/checkout uv run pytest

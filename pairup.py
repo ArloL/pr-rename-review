@@ -179,7 +179,19 @@ def main():
             ok = g and g[0] == n
             status = "ok" if ok else ("unpaired" if g is None else "mispaired")
             fh.write(f"{o}\t{n}\t{g[1] if ok else ''}\t{status}\n")
+    # The one-sided files, for scope.py to fold into the review. Separate from
+    # canonical-pairs.tsv because that is a mapping of old->new and these have
+    # only the one side; deriving either list again downstream would be a
+    # second opinion that can drift from the one printed above.
+    with open(OUT / "new-files.txt", "w") as fh:
+        for a in sorted(new_only):
+            fh.write(f"{a}\n")
+    with open(OUT / "deleted-files.txt", "w") as fh:
+        for d in sorted(unresolved):
+            fh.write(f"{d}\n")
     print(f"\nwrote {OUT}/canonical-pairs.tsv")
+    print(f"wrote {OUT}/new-files.txt")
+    print(f"wrote {OUT}/deleted-files.txt")
 
 
 if __name__ == "__main__":

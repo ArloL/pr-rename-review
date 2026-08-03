@@ -60,6 +60,18 @@ for ln in subprocess.run(["git", "diff", "-M50%", "-l50000", "--diff-filter=M",
     rows.append(dict(old=ln, new=ln, sim=None, kind="modified",
                      gh_target=None, gh_score=None))
 
+# The one-sided files: added by the PR (no old side) or deleted by it (no new
+# side). Neither has a partner, so no pairing pass would ever have picked them
+# up, and they went missing from a review that covers the whole PR. The path
+# repeats on both sides so every later pass keeps reading one shape, and
+# `git show <ref>:<path>` of a path that ref does not have is empty -- exactly
+# the missing side each one wants.
+for kind, listing in (("added", "new-files.txt"),
+                      ("deleted", "deleted-files.txt")):
+    for ln in (OUT / listing).read_text().splitlines():
+        rows.append(dict(old=ln, new=ln, sim=None, kind=kind,
+                         gh_target=None, gh_score=None))
+
 # Blob identity. Two files with the same hash have nothing to review, and a
 # pair that is empty on both sides is why git cross-links these at all --
 # identical content gives similarity nothing to work with.
@@ -90,6 +102,8 @@ json.dump(dict(canon_total=len(canon),
                split=sum(1 for r in rows if r["kind"] == "split"),
                mispaired=sum(1 for r in rows if r["kind"] == "mispaired"),
                modified=sum(1 for r in rows if r["kind"] == "modified"),
+               added=sum(1 for r in rows if r["kind"] == "added"),
+               deleted=sum(1 for r in rows if r["kind"] == "deleted"),
                shown=sum(1 for r in rows if r["kind"] == "shown")),
           open(OUT / "scope-summary.json", "w"), indent=1)
 with open(OUT / "pairs2.tsv", "w") as fh:
@@ -101,6 +115,8 @@ print(f"GitHub shows correctly     : {sum(1 for r in rows if r['kind']=='shown')
 print(f"IN SCOPE                   : {len(rows)}")
 print(f"  shown as add+delete      : {sum(1 for r in rows if r['kind']=='split')}")
 print(f"  renamed in place (M)     : {sum(1 for r in rows if r['kind']=='modified')}")
+print(f"  added by the PR (A)      : {sum(1 for r in rows if r['kind']=='added')}")
+print(f"  deleted by the PR (D)    : {sum(1 for r in rows if r['kind']=='deleted')}")
 print(f"  shown paired to the WRONG file: {sum(1 for r in rows if r['kind']=='mispaired')}")
 print(f"  of those, identical blobs (nothing to review): "
       f"{sum(1 for r in rows if r['identical'])}")

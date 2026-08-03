@@ -26,14 +26,15 @@ def test_replay_totals(rebuilt):
     move whenever the branch moves, so they are asserted against the pinned
     baseline. 62 of the files are pairs GitHub hides, 182 are renames it
     shows correctly (30 of them byte-identical moves, the zero-byte eval
-    fixtures included), and 15 changed in place."""
+    fixtures included), 15 changed in place and 2 the PR adds outright."""
     files = rebuilt["files"]
-    assert len(files) == 259
+    assert len(files) == 261
     assert sum(1 for f in files if f["kind"] == "split") == 59
     assert sum(1 for f in files if f["kind"] == "mispaired") == 3
     assert sum(1 for f in files if f["kind"] == "modified") == 15
+    assert sum(1 for f in files if f["kind"] == "added") == 2
     assert sum(1 for f in files if f["kind"] == "shown") == 182
-    assert sum(f["raw_w"] for f in files) == 11187
+    assert sum(f["raw_w"] for f in files) == 11879
     assert sum(1 for f in files if f["raw_w"] == 0) == 30
 
 
@@ -47,6 +48,25 @@ def test_replay_includes_files_renamed_in_place(rebuilt):
     assert sched in files
     assert files[sched]["kind"] == "modified"
     assert files[sched]["old"] == sched
+
+
+def test_replay_includes_files_the_pr_adds(rebuilt):
+    """A file the PR adds outright is not a rename and not a modification,
+    so nothing paired it into the review -- and it went missing from a page
+    that claims to carry the whole PR. It rides along as kind "added", with
+    the base side empty, so it gets its word-level view and its Viewed tick
+    like every other file."""
+    files = {f["new"]: f for f in rebuilt["files"]}
+    for path in ("src/main/resources/db/changelog/changes/"
+                 "2026-07-31-rename-german-identifiers.yaml",
+                 "src/test/java/de/haegerconsulting/hsp/tender/"
+                 "infrastructure/EventPublicationDrainGateTest.java"):
+        assert path in files, f"the PR adds {path} and the review drops it"
+        assert files[path]["kind"] == "added"
+        assert files[path]["old"] == path
+        assert files[path]["sim"] is None
+        # Every line is an addition: nothing on the base side to diff against.
+        assert all(r[0] == "add" for r in files[path]["raw"])
 
 
 def test_replay_includes_renames_github_shows_correctly(rebuilt):

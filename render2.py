@@ -59,12 +59,38 @@ n_clean = sum(1 for c in compact if c["rw"] == 0)
 n_wrong = sum(1 for c in compact if c["kind"] == "mispaired")
 n_mod = sum(1 for c in compact if c["kind"] == "modified")
 n_shown = sum(1 for c in compact if c["kind"] == "shown")
+n_added = sum(1 for c in compact if c["kind"] == "added")
+n_deleted = sum(1 for c in compact if c["kind"] == "deleted")
 n_prev = sum(1 for c in compact if c["prev"])
 n_pairs = len(compact)
-n_split = n_pairs - n_wrong - n_mod - n_shown
+# Counted directly rather than as the leftover: a new kind used to land in
+# whichever bucket was the remainder, which is how added files first went
+# missing from the prose while sitting in the list.
+n_split = sum(1 for c in compact if c["kind"] == "split")
 n_renames = SUMMARY.get("canon_total", n_pairs)
 n_correct = SUMMARY.get("gh_correct", 0)
 tot_raw = sum(c["rw"] for c in compact)
+
+
+def _list(items):
+    """`a`, `a and b`, `a, b and c`."""
+    return " and ".join(items) if len(items) < 3 else (
+        ", ".join(items[:-1]) + " and " + items[-1])
+
+
+# The kinds that ride along because the review covers the whole PR, not
+# because GitHub hides them. A branch that is purely a rename usually has no
+# add and no deletion git cannot pair, and a sentence that announces "0 files
+# the PR deletes" on every build teaches the eye to skip the whole paragraph,
+# so each clause appears only when it has something to describe.
+riders = ["those"]
+if n_mod:
+    riders.append(f"the {n_mod} files changed <b>in place</b>")
+if n_added:
+    riders.append(f"the {n_added} the PR <b>adds</b>")
+if n_deleted:
+    riders.append(f"the {n_deleted} it <b>deletes</b>")
+RIDERS = _list(riders)
 
 CSS = """
 :root{
@@ -155,6 +181,7 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--mono);
 .tag.seen{background:var(--rule);color:var(--ink-3)}
 .tag.mod{background:var(--rule);color:var(--ink-3)}
 .tag.clean{background:var(--add-mark);color:var(--add-ink)}
+.tag.gone{background:var(--del-mark);color:var(--del-ink)}
 .item.done .nm .t{color:var(--ink-3);text-decoration:line-through;
      text-decoration-color:var(--rule)}
 .item.done .tick{color:var(--add-ink);flex:none;font-size:11px}
@@ -230,7 +257,7 @@ HTML = f"""<title>The German→English rename — word-level review</title>
   <h1>The German→English rename · word-level review</h1>
   <p class="sub">{REFS["head_ref"]} <span class="sha">{HEAD_SHORT}</span> &nbsp;·&nbsp; forked from {REFS["base_ref"]} at <span class="sha">{BASE_SHORT}</span> &nbsp;·&nbsp; {n_renames} renames total, {n_correct} of them GitHub shows correctly &nbsp;·&nbsp; {n_mod} files changed in place</p>
   <p class="note">Every file the PR touches is here. GitHub shows {n_shown} of the renames
-  correctly; those and the {n_mod} files changed <b>in place</b> ride along so the whole PR can
+  correctly; {RIDERS} ride along so the whole PR can
   be reviewed and ticked in one spot. The rest is what GitHub's diff does <b>not</b> put side by
   side, failing two ways: {n_split} pairs fall under its 50&#37; rename threshold and render as an
   unrelated delete plus add, and {n_wrong} it <i>does</i> pair — to the <b>wrong file</b>,
@@ -378,6 +405,8 @@ function drawIndex(){{
     const w=f.rw, c=f.rc, done=isDone(f);
     const tags=(f.kind==='mispaired'?'<span class="tag wrong">wrong pair</span>':'')+
                (f.kind==='modified'?'<span class="tag mod">in place</span>':'')+
+               (f.kind==='added'?'<span class="tag mod">new file</span>':'')+
+               (f.kind==='deleted'?'<span class="tag gone">deleted</span>':'')+
                (f.prev?'<span class="tag seen">prev</span>':'')+
                (f.rw===0?'<span class="tag clean">clean</span>':'');
     // stopPropagation: without it the link click also fires the row handler.
@@ -415,6 +444,14 @@ function drawPane(){{
     : f.kind==='modified'
     ? `<div class="flag">Changed <b>in place</b> — the path never moved, so GitHub shows this
        diff normally. It is here so the review covers every file the rename touched.</div>`
+    : f.kind==='added'
+    ? `<div class="flag"><b>New file</b> — the PR adds it, so there is no base side and every
+       line is an addition. GitHub shows it normally; it is here so the review covers every
+       file the PR touches.</div>`
+    : f.kind==='deleted'
+    ? `<div class="flag"><b>Deleted</b> — the PR removes it, and no rename claims the content,
+       so there is no head side and every line is a removal. If this file was meant to move
+       rather than go, the pairing report is where that shows up.</div>`
     : f.kind==='mispaired'
     ? `<div class="flag"><b>GitHub shows this file paired to the wrong partner.</b> It renders
        <code>${{f.on}}</code> → <code>${{f.ght}}</code> at ${{f.ghs}}&#37; similarity. The pairing above is
@@ -427,10 +464,10 @@ function drawPane(){{
           <code>git diff -M${{Math.max(1,f.sim-2)}}% --word-diff</code>, with <b>both</b> paths in the
           pathspec or rename detection silently switches off again.</div>`);
   pane.innerHTML=`<div class="paths">
-      ${{f.kind==='modified'
+      ${{f.kind==='modified'||f.kind==='added'||f.kind==='deleted'
         ? `<span class="new">${{f.nn}}</span>`
         : `<span class="old">${{f.on}}</span><span class="arrow">→</span><span class="new">${{f.nn}}</span>`}}
-      <div class="stat">${{f.kind==='modified'?f.np:`${{f.op}} → ${{f.np}}`}}</div>
+      <div class="stat">${{f.kind==='modified'||f.kind==='added'||f.kind==='deleted'?f.np:`${{f.op}} → ${{f.np}}`}}</div>
       <div class="stat">${{f.L}} lines · ${{f.rc}} changed lines · ${{f.rw}} highlighted tokens</div>
       ${{how}}
       <div class="acts">

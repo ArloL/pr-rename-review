@@ -1,4 +1,5 @@
 import hashlib, json, os, pathlib, subprocess, sys
+import pytest
 from config import Config
 from github import pr_url
 
@@ -75,6 +76,36 @@ def test_page_carries_the_old_path_of_each_pair(tmp_path):
 def test_page_posts_a_path_list(tmp_path):
     html = _build_page(tmp_path, [_pair()])
     assert "JSON.stringify({paths" in html
+
+
+def _onesided(kind):
+    """An added or deleted file: one path, repeated on both sides."""
+    return _pair(kind=kind, old="src/new/Foo.java", oldname="Foo.java",
+                 oldpkg="src/new", sim=None)
+
+
+@pytest.mark.parametrize("kind", ["added", "deleted"])
+def test_page_does_not_count_a_one_sided_file_as_a_hidden_pair(tmp_path, kind):
+    """`split` used to be whatever was left after the other kinds were
+    subtracted, so a kind the arithmetic did not know about inflated the
+    count of pairs GitHub hides. Counting each kind directly is what keeps a
+    future kind from landing in the wrong bucket."""
+    html = _build_page(tmp_path, [_onesided(kind)])
+    assert 'data-f="hidden" aria-pressed="false">Hidden 0<' in html
+
+
+def test_page_names_the_one_sided_files_in_the_summary(tmp_path):
+    html = _build_page(tmp_path, [_onesided("added"), _onesided("deleted")])
+    assert "the 1 the PR <b>adds</b> and the 1 it <b>deletes</b>" in html
+
+
+def test_page_summary_omits_a_clause_with_nothing_to_describe(tmp_path):
+    """A rename branch usually deletes nothing git cannot pair. Printing
+    "0 files the PR deletes" on every build teaches the eye to skip the
+    paragraph that explains what the page is showing."""
+    html = _build_page(tmp_path, [_onesided("added")])
+    assert "deletes" not in html
+    assert "the 1 the PR <b>adds</b>" in html
 
 
 def test_page_has_no_glossary_ui(tmp_path):
