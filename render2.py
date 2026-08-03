@@ -8,8 +8,7 @@ from refs import load
 S = pathlib.Path(__file__).parent
 OUT = pathlib.Path(os.environ.get("OUT") or (pathlib.Path(__file__).parent / "build"))
 OUT.mkdir(parents=True, exist_ok=True)
-blob = json.loads((OUT / "diffdata2.json").read_text())
-files, empties = blob["files"], blob["empties"]
+files = json.loads((OUT / "diffdata2.json").read_text())["files"]
 
 CFG = load_config(S / ".pr-rename-review.toml")
 # From the run, never from CFG: with a moving head ref the ref name alone is
@@ -54,15 +53,7 @@ for f in files:
         "rc": f["raw_c"], "rw": f["raw_w"], "L": f["lines"],
         "R": [[r[0], r[1], r[2], r[3], r[4]] for r in f["raw"]]})
 
-def evalshort(p):
-    return p.replace("src/test/resources/evals/", "").replace("ExpectedOutput/", "")
-
-
-EMP = [{"o": evalshort(e["old"]), "n": evalshort(e["new"]),
-        "g": evalshort(e["gh_target"] or "")} for e in empties]
-
 DATA = json.dumps(compact, separators=(",", ":"))
-EDATA = json.dumps(EMP, separators=(",", ":"))
 maxw = max(c["rw"] for c in compact) or 1
 n_clean = sum(1 for c in compact if c["rw"] == 0)
 n_wrong = sum(1 for c in compact if c["kind"] == "mispaired")
@@ -275,15 +266,10 @@ HTML = f"""<title>The German→English rename — word-level review</title>
   <section class="pane"><div id="pane"></div></section>
 </div>
 <div class="foot">
-  <h2>The 11 pairs left out</h2>
-  <p>These eval fixtures are zero-byte on both sides, so git pairs them arbitrarily among
-  themselves and GitHub inherits the shuffle. The cross-links below are wrong, but the files are
-  empty — the move is real, the content is not there to review.</p>
-  <div class="scroll"><table id="emp"></table></div>
   <div id="unk"></div>
 </div>
 <script>
-const D={DATA},EMP={EDATA},MAXW={maxw};
+const D={DATA},MAXW={maxw};
 let cur=0,flt='all';
 const ix=document.getElementById('ix'),pane=document.getElementById('pane'),ixh=document.getElementById('ixh');
 
@@ -509,8 +495,6 @@ document.querySelectorAll('.flt').forEach(b=>b.onclick=()=>{{
   const v=view();
   if(!v.some(([,i])=>i===cur)&&v.length)cur=v[0][1];
   draw();}});
-document.getElementById('emp').innerHTML=EMP.map(e=>
-  `<tr><td>${{e.o}}</td><td>→</td><td class="ok">${{e.n}}</td><td>GitHub says → ${{e.g}}</td></tr>`).join('');
 loadViewed();
 </script>"""
 

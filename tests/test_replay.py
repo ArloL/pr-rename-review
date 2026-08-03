@@ -20,24 +20,21 @@ def test_replay_matches_golden(rebuilt):
     for path in sorted(want):
         assert got[path] == want[path], f"payload changed for {path}"
 
-    assert rebuilt["empties"] == golden["empties"]
-
 
 def test_replay_totals(rebuilt):
-    """Measured at 52efff3...1ce7bfa. These move whenever the branch moves,
-    so they are asserted against the pinned baseline, not against the
-    historical figures in the design doc. 62 of the files are pairs GitHub
-    hides, 169 are renames it shows correctly (19 of them pure moves), and
-    15 changed in place."""
+    """Measured at eb1b00665...47c9dc7, the two-commit branch shape. These
+    move whenever the branch moves, so they are asserted against the pinned
+    baseline. 62 of the files are pairs GitHub hides, 182 are renames it
+    shows correctly (30 of them byte-identical moves, the zero-byte eval
+    fixtures included), and 15 changed in place."""
     files = rebuilt["files"]
-    assert len(files) == 246
-    assert len(rebuilt["empties"]) == 11
+    assert len(files) == 259
     assert sum(1 for f in files if f["kind"] == "split") == 59
     assert sum(1 for f in files if f["kind"] == "mispaired") == 3
     assert sum(1 for f in files if f["kind"] == "modified") == 15
-    assert sum(1 for f in files if f["kind"] == "shown") == 169
-    assert sum(f["raw_w"] for f in files) == 10522
-    assert sum(1 for f in files if f["raw_w"] == 0) == 19
+    assert sum(1 for f in files if f["kind"] == "shown") == 182
+    assert sum(f["raw_w"] for f in files) == 11187
+    assert sum(1 for f in files if f["raw_w"] == 0) == 30
 
 
 def test_replay_includes_files_renamed_in_place(rebuilt):
@@ -98,6 +95,7 @@ def test_pairing_report_matches_golden(pair_report):
 
 
 def test_pairing_finds_the_known_disagreements(pair_report):
-    assert "total disagreements: 21" in pair_report
-    assert "old files that moved: 242" in pair_report
+    assert "old files that moved: 244" in pair_report
+    assert "recorded by rename commits : 228" in pair_report
+    assert "total disagreements: 10" in pair_report
     assert "collisions          : []" in pair_report

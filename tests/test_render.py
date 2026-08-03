@@ -1,12 +1,12 @@
 import hashlib, json, os, pathlib, subprocess, sys
-from config import Config, Pairing
+from config import Config
 from github import pr_url
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 def cfg(pr=252):
-    return Config(base="main", head="HEAD", pr=pr, pairing=Pairing())
+    return Config(base="main", head="HEAD", pr=pr)
 
 
 def test_pr_url_points_at_the_file_in_the_github_diff():
@@ -51,8 +51,7 @@ def _pair(**kw):
 def _build_page(tmp_path, files):
     out = tmp_path / "build"
     out.mkdir()
-    (out / "diffdata2.json").write_text(
-        json.dumps({"files": files, "empties": []}))
+    (out / "diffdata2.json").write_text(json.dumps({"files": files}))
     (out / "refs.json").write_text(json.dumps(
         {"base": "a" * 40, "head": "b" * 40,
          "base_ref": "main", "head_ref": "topic"}))

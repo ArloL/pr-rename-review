@@ -1,67 +1,30 @@
+import os, pathlib, subprocess, sys
 import pytest
-from config import Pairing
-from pairup import PairingError, check_collisions, expected_path
+from pairup import PairingError, check_collisions, history_pairing
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
-def test_path_rules_apply_to_directories_only():
-    p = Pairing(path_rules=[("/ausschreibung", "/tender")])
-    assert expected_path("src/de/ausschreibung/Foo.java", p) == \
-        "src/de/tender/Foo.java"
+def _git(repo, *args):
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
 
 
-def test_path_rules_do_not_touch_the_basename():
-    """The basename is handled by basenames/words. A path rule that also hit
-    the filename would apply lowercase package vocabulary to a class name."""
-    p = Pairing(path_rules=[("/ausschreibung", "/tender")])
-    assert expected_path("a/b/ausschreibung.java", p) == "a/b/ausschreibung.java"
+def _commit(repo, msg):
+    _git(repo, "add", "--all")
+    _git(repo, "commit", "--quiet", "--message", msg)
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True,
+                          capture_output=True, text=True).stdout.strip()
 
 
-def test_basename_override_beats_word_substitution():
-    """A semantic rename is not word-for-word, so the override wins outright
-    rather than being applied on top of the word list."""
-    p = Pairing(basenames={"Auslastung.java": "UtilizationRate.java"},
-                words=[("Auslastung", "Workload")])
-    assert expected_path("a/Auslastung.java", p) == "a/UtilizationRate.java"
+@pytest.fixture
+def repo(tmp_path):
+    _git(tmp_path, "init", "--quiet")
+    _git(tmp_path, "config", "user.email", "t@example.invalid")
+    _git(tmp_path, "config", "user.name", "t")
+    return tmp_path
 
 
-def test_words_apply_in_file_order():
-    p = Pairing(words=[("Ausschreibungen", "Tenders"),
-                       ("Ausschreibung", "Tender")])
-    assert expected_path("a/AusschreibungenRepo.java", p) == "a/TendersRepo.java"
-
-
-def test_reversed_word_order_would_break_the_plural():
-    """Documents why order is significant, so nobody sorts the table."""
-    p = Pairing(words=[("Ausschreibung", "Tender"),
-                       ("Ausschreibungen", "Tenders")])
-    assert expected_path("a/AusschreibungenRepo.java", p) == "a/TenderenRepo.java"
-
-
-def test_dir_segments_apply_only_inside_their_scope():
-    p = Pairing(dir_scope="/evals/", dir_segments={"Projekt": "ProjectData"})
-    assert expected_path("t/evals/Projekt/a.json", p) == \
-        "t/evals/ProjectData/a.json"
-    assert expected_path("src/Projekt/a.json", p) == "src/Projekt/a.json"
-
-
-def test_dir_segments_match_whole_segments_only():
-    p = Pairing(dir_scope="/evals/", dir_segments={"Projekt": "ProjectData"})
-    assert expected_path("t/evals/ProjektAlt/a.json", p) == \
-        "t/evals/ProjektAlt/a.json"
-
-
-def test_dir_segments_with_no_scope_apply_everywhere():
-    p = Pairing(dir_segments={"Projekt": "ProjectData"})
-    assert expected_path("src/Projekt/a.json", p) == "src/ProjectData/a.json"
-
-
-def test_file_with_no_directory():
-    p = Pairing(words=[("Ausschreibung", "Tender")])
-    assert expected_path("Ausschreibung.java", p) == "Tender.java"
-
-
-def test_empty_pairing_is_the_identity():
-    assert expected_path("a/b/Foo.java", Pairing()) == "a/b/Foo.java"
+CONTENT = "".join(f"line {i} of some distinctive text\n" for i in range(12))
 
 
 def test_collisions_are_an_error():
@@ -78,3 +41,71 @@ def test_collision_message_names_both_sources():
 
 def test_no_collisions_passes():
     check_collisions({"a.java": "b.java", "c.java": "d.java"})
+
+
+def test_history_pairing_records_a_pure_move_then_edit(repo):
+    """A rename commit followed by a content commit is the branch shape the
+    tool prefers: the move is recorded exactly and cannot go stale, however
+    heavily the content commit rewrites the file."""
+    (repo / "a.txt").write_text(CONTENT)
+    base = _commit(repo, "base")
+    _git(repo, "mv", "a.txt", "b.txt")
+    _commit(repo, "move")
+    (repo / "b.txt").write_text("entirely different now\n")
+    head = _commit(repo, "rewrite")
+    assert history_pairing(repo, base, head) == {"a.txt": "b.txt"}
+
+
+def test_history_pairing_chains_successive_moves(repo):
+    (repo / "a.txt").write_text(CONTENT)
+    base = _commit(repo, "base")
+    _git(repo, "mv", "a.txt", "b.txt")
+    _commit(repo, "first move")
+    _git(repo, "mv", "b.txt", "c.txt")
+    head = _commit(repo, "second move")
+    assert history_pairing(repo, base, head) == {"a.txt": "c.txt"}
+
+
+def test_history_pairing_ignores_inexact_renames(repo):
+    """A commit that renames and edits at once is back to similarity
+    guessing, which is the failure mode this tool exists for -- only exact
+    moves count as recorded."""
+    (repo / "a.txt").write_text(CONTENT)
+    base = _commit(repo, "base")
+    _git(repo, "mv", "a.txt", "b.txt")
+    (repo / "b.txt").write_text(CONTENT + "one more line\n")
+    head = _commit(repo, "move and edit")
+    assert history_pairing(repo, base, head) == {}
+
+
+def test_history_pairing_drops_ambiguous_identical_blobs(repo):
+    """Exact-rename detection pairs identical files arbitrarily (the
+    zero-byte eval fixtures). An arbitrary pair recorded as truth would be
+    worse than falling back to the name tables, so both are dropped."""
+    (repo / "e1.txt").write_text("")
+    (repo / "e2.txt").write_text("")
+    base = _commit(repo, "base")
+    _git(repo, "mv", "e1.txt", "x.txt")
+    _git(repo, "mv", "e2.txt", "y.txt")
+    head = _commit(repo, "move empties")
+    assert history_pairing(repo, base, head) == {}
+
+
+def test_recorded_moves_pair_end_to_end(repo):
+    """Through pairup.py itself: a full rewrite still pairs, because the
+    rename commit recorded the move. There is no name vocabulary -- the
+    branch's own history is the only pairing authority."""
+    (repo / "a.txt").write_text(CONTENT)
+    base = _commit(repo, "base")
+    _git(repo, "mv", "a.txt", "b.txt")
+    _commit(repo, "move")
+    (repo / "b.txt").write_text("entirely different now\n")
+    head = _commit(repo, "rewrite")
+    out = repo / "out"
+    env = {**os.environ, "REPO": str(repo), "BASE": base, "HEAD_REF": head,
+           "OUT": str(out)}
+    subprocess.run([sys.executable, str(ROOT / "pairup.py")], env=env,
+                   cwd=ROOT, check=True, capture_output=True, text=True)
+    pairs = dict(ln.split("\t")[:2]
+                 for ln in (out / "canonical-pairs.tsv").read_text().splitlines())
+    assert pairs == {"a.txt": "b.txt"}

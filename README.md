@@ -5,8 +5,9 @@ Reviews a rename-heavy PR that GitHub's diff cannot pair.
 GitHub matches a deleted file to an added one by content similarity at a 50%
 threshold. A rename that rewrites the domain vocabulary drops far below that,
 so the files that changed most are exactly the ones GitHub stops showing side
-by side. This tool pairs them **by name** instead, cancels the mechanical part
-of the rename, and ranks what is left.
+by side. This tool pairs them from the branch's **recorded moves** instead —
+the exact per-commit renames a dedicated rename commit leaves behind — and
+word-diffs every file of the PR in one reviewable, tickable page.
 
 Design: `2026-08-02-pr-rename-review-v1-spec.md`. The original proposal, with
 the problem analysis and prior-art survey, is
@@ -37,21 +38,21 @@ output that found the mispairings in the first place — and needs no browser.
 
 | Script | Pass | Does |
 |---|---|---|
-| `pairup.py` | 1 | Pairs old→new **by name**, falls back to git similarity, reports every disagreement |
+| `pairup.py` | 1 | Pairs old→new from the branch's **recorded moves** (exact per-commit renames), falls back to git's endpoint similarity, reports every disagreement |
 | `scope.py` | 1b | Works out how GitHub presents each pair, and which have identical blobs |
 | `gen2.py` | 3 | Word-diffs each pair |
 | `render2.py` | 4 | Emits the page, files ranked by changed tokens |
 
+Pairing needs no vocabulary: keep the renames in their own commit (`git mv`,
+commit, then change content in later commits) and every move is recorded as
+an exact per-commit rename that similarity guessing can never degrade. Only
+moves the history cannot prove — identical-blob shuffles, renames folded
+into content commits — fall back to git's endpoint guess.
+
 ## Configuration
 
-`.pr-rename-review.toml` holds the pairing vocabulary. Data only — the
-pairing logic stays in Python.
-
-**`[pairing].words` is an ordered list.** It is applied as a sequence of
-`str.replace` calls, so the plural must precede the singular. Do not sort it.
-
-Asserted at pairing time, because it fails silently otherwise: no two old
-paths may derive the same new path.
+`.pr-rename-review.toml` names the refs to review and the PR whose Viewed
+ticks to sync. Nothing else.
 
 ## Viewed state
 

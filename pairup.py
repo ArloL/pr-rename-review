@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Derive the canonical old->new pairing by name, independent of git's
-content-similarity guess, then report where git disagrees.
+"""Derive the canonical old->new pairing from the branch's own history, then
+report where git's endpoint guess disagrees.
 
-Pairing by name rather than by content is the whole point: below git's 50%
-rename threshold, content similarity starts pairing files that merely have the
-same shape, and a confidently wrong pairing is worse than no pairing.
+The branch records its renames: a pure rename commit shows every move as an
+exact (R100) per-commit rename, which cannot go stale the way a hand-kept
+name table could. Endpoint content similarity is only the fallback for moves
+the history cannot prove.
 """
 import json, os, pathlib, subprocess, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from config import load_config
 from refs import resolve, short
 
 S = pathlib.Path(__file__).resolve().parent
@@ -18,27 +18,6 @@ OUT = pathlib.Path(os.environ.get("OUT") or (S / "build"))
 
 class PairingError(Exception):
     pass
-
-
-def expected_path(old, pairing):
-    """Derive the new path from the old one by name alone.
-
-    Content similarity is never consulted here. Directory segments are
-    rewritten first, then the basename -- by an explicit override if there is
-    one, otherwise by the ordered word list.
-    """
-    d, b = os.path.split(old)
-    for a, z in pairing.path_rules:
-        d = d.replace(a, z)
-    if pairing.dir_segments and (
-            pairing.dir_scope is None or pairing.dir_scope in d):
-        d = "/".join(pairing.dir_segments.get(seg, seg) for seg in d.split("/"))
-    if b in pairing.basenames:
-        b = pairing.basenames[b]
-    else:
-        for a, z in pairing.words:
-            b = b.replace(a, z)
-    return f"{d}/{b}" if d else b
 
 
 def check_collisions(canon):
@@ -58,6 +37,49 @@ def tree(repo, ref):
     return set(subprocess.run(["git", "ls-tree", "-r", "--name-only", ref],
                               capture_output=True, text=True,
                               cwd=repo).stdout.split())
+
+
+def history_pairing(repo, base, head):
+    """Moves recorded by the branch's own commits, chained across the range.
+
+    Only exact (R100) per-commit renames count -- `git mv`'s fingerprint,
+    immune to similarity guessing however heavily a later commit rewrites
+    the file. Within one commit, exact candidates sharing a blob (zero-byte
+    eval fixtures) are paired arbitrarily by git, so they are dropped rather
+    than recorded as truth. Merge commits are skipped: their renames belong
+    to the branch being merged.
+    """
+    pairs, origin = {}, {}
+    commits = subprocess.run(["git", "rev-list", "--reverse", "--no-merges",
+                              f"{base}..{head}"],
+                             capture_output=True, text=True, cwd=repo).stdout.split()
+    for c in commits:
+        moves = []
+        for ln in subprocess.run(["git", "diff", "-M50%", "-l50000",
+                                  "--name-status", f"{c}^..{c}"],
+                                 capture_output=True, text=True,
+                                 cwd=repo).stdout.splitlines():
+            f = ln.split("\t")
+            if f[0] == "R100":
+                moves.append((f[1], f[2]))
+        if not moves:
+            continue
+        blob = {}
+        for ln in subprocess.run(["git", "ls-tree", "-r", f"{c}^"],
+                                 capture_output=True, text=True,
+                                 cwd=repo).stdout.splitlines():
+            meta, path = ln.split("\t", 1)
+            blob[path] = meta.split()[2]
+        counts = {}
+        for o, _ in moves:
+            counts[blob[o]] = counts.get(blob[o], 0) + 1
+        for o, n in moves:
+            if counts[blob[o]] > 1:
+                continue
+            first = origin.pop(o, o)
+            pairs[first] = n
+            origin[n] = first
+    return pairs
 
 
 def git_pairing(repo, base, head):
@@ -83,6 +105,7 @@ def git_pairing(repo, base, head):
 
 
 def main():
+    from config import load_config
     cfg = load_config(S / ".pr-rename-review.toml")
     repo = os.environ.get("REPO") or subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
@@ -102,37 +125,42 @@ def main():
 
     head_tree = tree(repo, head)
     git_pair, adds, dels = git_pairing(repo, base, head)
+    hist = history_pairing(repo, base, head)
 
     # every old file that moved, per git (renamed or deleted)
     moved_old = list(git_pair) + dels
     canon, unresolved = {}, []
+    n_recorded = n_fallback = 0
     for o in moved_old:
-        n = expected_path(o, cfg.pairing)
-        if n in head_tree:
-            canon[o] = n
+        h = hist.get(o)
+        if h and h in head_tree:
+            canon[o] = h
+            n_recorded += 1
         elif o in git_pair:
-            # no name-derived target exists (frozen rest/ names, verb-flipped
-            # agents); git's own pairing is the best evidence we have
+            # the history cannot prove this move (identical-blob shuffle, or
+            # a rename folded into a content commit); git's endpoint guess is
+            # the only evidence left
             canon[o] = git_pair[o][0]
+            n_fallback += 1
         else:
-            unresolved.append((o, n))
+            unresolved.append(o)
 
     used = set(canon.values())
     new_only = [a for a in adds if a not in used]
 
     print(f"old files that moved: {len(moved_old)}")
-    print(f"canonically paired  : {len(canon)}")
-    print(f"unresolved olds     : {len(unresolved)}")
-    for o, guess in unresolved:
-        print(f"   {o}\n      guessed {guess} (absent)   "
-              f"git says {git_pair.get(o, ('-',))[0]}")
+    print(f"recorded by rename commits : {n_recorded}")
+    print(f"endpoint-similarity fallback: {n_fallback}")
+    print(f"deleted or unpaired : {len(unresolved)}")
+    for o in unresolved:
+        print(f"   {o}")
     print(f"genuinely new files : {len(new_only)}")
     for a in new_only:
         print(f"   {a}")
     check_collisions(canon)
     print("collisions          : []")
 
-    print("\n=== git disagrees with the canonical pairing ===")
+    print("\n=== git's endpoint guess disagrees with the recorded moves ===")
     n_dis = 0
     for o, n in sorted(canon.items()):
         g = git_pair.get(o)

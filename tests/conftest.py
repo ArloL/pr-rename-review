@@ -5,15 +5,17 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 GOLDEN = ROOT / "tests" / "golden"
 
 # The golden fixtures were captured at this commit. HEAD_REF must be pinned:
-# `origin/refactor/german-to-english-rename` is a moving ref, and a fetch that
-# advances it silently changes every number the replay asserts.
-BASELINE_BASE = "52efff3"
-BASELINE_HEAD = "1ce7bfa"
+# `origin/refactor/german-to-english-rename-v2` is a moving ref, and a fetch
+# that advances it silently changes every number the replay asserts. The
+# pinned head is the two-commit shape (rename commit, then content commit)
+# that history pairing reads its moves from.
+BASELINE_BASE = "eb1b00665"
+BASELINE_HEAD = "47c9dc7"
 
 
 @pytest.fixture(scope="session")
 def repo_env():
-    """Environment for a replay against the pinned PR #252 baseline."""
+    """Environment for a replay against the pinned PR #259 baseline."""
     repo = os.environ.get("REPO")
     if not repo:
         pytest.skip("set REPO to the checkout PR #252 lives in")

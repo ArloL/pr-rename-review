@@ -1,10 +1,7 @@
-# Vocabulary for the German-to-English rename on PR #259 (the reworked #252,
-# stacked on the #258 prep branch).
-#
-# Data only -- the pairing logic lives in pairup.py. Generated from the
-# prototype's hardcoded tables; every entry is a row of
-# 2026-07-31-german-to-english-rename-design.md's Glossary, Java renames or
-# Database renames tables, or a case variant of one.
+# Which refs to review for the German-to-English rename on PR #259 (the
+# reworked #252, stacked on the #258 prep branch). Pairing needs no
+# vocabulary here: the branch's own rename commits record every move, and
+# pairup.py reads them from history.
 
 [repo]
 # Both refs move on purpose: the point of the tool is to review the PR as it
@@ -19,75 +16,4 @@
 base = "origin/refactor/german-rename-prep"
 head = "origin/refactor/german-to-english-rename-v2"
 pr = 259
-
-[pairing]
-# Applied to directory segments before the basename rules.
-path_rules = [["/ausschreibung", "/tender"]]
-
-# ORDER IS SIGNIFICANT. These are applied as a sequence of str.replace calls,
-# so the plural must precede the singular or it never matches. Do not sort.
-
-words = [
-  ["AusschreibungDuplikatId", "TenderDuplicateId"],
-  ["AusschreibungDuplikate", "TenderDuplicate"],
-  ["AusschreibungDuplikat", "TenderDuplicate"],
-  ["Ausschreibungen", "Tenders"],
-  ["Ausschreibung", "Tender"],
-  ["Duplikate", "Duplicate"],
-  ["Duplikat", "Duplicate"],
-  ["Kunden", "Client"],
-  ["Kunde", "Client"],
-  ["Vermittler", "Contact"],
-  ["BearbeitungsStatus", "ProcessingStatus"],
-  ["Bearbeiter", "Assignee"],
-  ["Klassifikation", "Classification"],
-]
-
-# Non-mechanical basename renames: semantic, not word-for-word. An entry here
-# wins outright over the word list rather than being applied on top of it.
-
-[pairing.basenames]
-"AusschreibungAnalysierenService.java" = "TenderAnalysisService.java"
-"AusschreibungAnalysierenAgent.java" = "AnalyzeTenderAgent.java"
-"AusschreibungVerarbeitenAgent.java" = "ProcessTenderAgent.java"
-"DuplikateErkennenService.java" = "DuplicateDetectionService.java"
-"KundenBestGuessService.java" = "ClientBestGuessService.java"
-"KundenMemoryLearningService.java" = "ClientMemoryLearningService.java"
-"AusschreibungDaten.java" = "TenderData.java"
-"AusschreibungErstelltEvent.java" = "TenderCreatedEvent.java"
-"AusschreibungKlassifiziertEvent.java" = "TenderClassifiedEvent.java"
-"AusschreibungExtrahiertEvent.java" = "TenderExtractedEvent.java"
-"AusschreibungKlassifikationKorrigiertEvent.java" = "TenderClassificationCorrectedEvent.java"
-"AusschreibungKundeAktualisiertEvent.java" = "TenderClientUpdatedEvent.java"
-"Auslastung.java" = "UtilizationRate.java"
-"RemoteAnteil.java" = "RemoteRatio.java"
-"Einsatzort.java" = "Location.java"
-"Branche.java" = "Industry.java"
-"Quelle.java" = "Source.java"
-"Klassifikation.java" = "Classification.java"
-"Vermittler.java" = "Contact.java"
-"Kunde.java" = "Client.java"
-"EmailKategorisierung.java" = "EmailCategorization.java"
-"MoveMailToBearbeitetAgent.java" = "MoveMailToProcessedAgent.java"
-"UnbekannterBearbeiterException.java" = "UnknownAssigneeException.java"
-"DuplikatUebersicht.java" = "DuplicateOverview.java"
-"DuplikatGruppe.java" = "DuplicateGroup.java"
-"BestGuessErgebnis.java" = "BestGuessResult.java"
-"Lektion.java" = "Lesson.java"
-"Zuordnungsregel.java" = "MatchingRule.java"
-
-# Eval fixture directories were renamed too, and not word-for-word. Scoped,
-# because `Projekt -> ProjectData` is right for a fixture directory and wrong
-# everywhere else -- applying it globally would produce confident nonsense.
-[pairing.dir_segments]
-scope = "/evals/"
-
-[pairing.dir_segments.segments]
-Projekt = "ProjectData"
-Vermittler = "ContactData"
-AusschreibungAuslesen = "ReadTender"
-EmailKategorisieren = "CategorizeEmail"
-BeschreibungExtrahieren = "ExtractDescription"
-ProjektdatenExtrahieren = "ExtractProjectData"
-Ausschreibung = "Tender"
 
