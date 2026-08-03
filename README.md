@@ -90,8 +90,10 @@ spec's "Commenting" section for why, and for what would justify changing it.
 ## Which commits get reviewed
 
 `[repo].base` and `[repo].head` name **moving** refs — `origin/main` and the PR
-branch — because the point is to review the PR as it stands. Push, fetch, run
-again, and the new commits are there.
+branch — because the point is to review the PR as it stands. `build` and
+`serve` fetch first, so pushing and running again is enough; there is no
+separate fetch to forget. A fetch that fails is reported and the build carries
+on against the refs already on disk.
 
 The base is resolved to `git merge-base base head`, never to the base branch's
 tip. Against the tip, every commit `main` gained since the fork would show up

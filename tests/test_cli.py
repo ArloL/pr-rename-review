@@ -97,6 +97,9 @@ def test_a_failing_pass_stops_the_run(monkeypatch, tmp_path):
             stdout, stderr = "", "boom"
         return P()
 
+    # The fetch would otherwise be the first subprocess call and absorb the
+    # simulated failure; this test is about the passes.
+    monkeypatch.setattr("cli.fetch_refs", lambda env: None)
     monkeypatch.setattr("cli.subprocess.run", fake_run)
     code = main(["--out", str(tmp_path), "build"])
     assert code == 1

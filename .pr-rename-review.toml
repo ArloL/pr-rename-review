@@ -7,11 +7,11 @@
 
 [repo]
 # Both refs move on purpose: the point of the tool is to review the PR as it
-# is now, so a push plus a fetch has to show up on the page. What keeps that
-# safe is refs.py resolving `base` to `git merge-base base head` -- against the
-# branch tip, commits main gained since the fork would appear inside the review.
-# The page prints the commit it actually built from, so a missing fetch is
-# visible rather than silent.
+# is now, so a push has to show up on the page. Building fetches first, so
+# there is no separate step to forget. What keeps a moving base safe is refs.py
+# resolving it to `git merge-base base head` -- against the branch tip, commits
+# main gained since the fork would appear inside the review. The page prints
+# the commits it actually built from, so an older build is visibly older.
 #
 # The regression baseline is pinned separately, in tests/conftest.py. Pinning
 # it there is what lets these move.

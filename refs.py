@@ -8,7 +8,7 @@ underneath it.
 Resolving the base to the merge base rather than to the base branch's tip is
 what makes a moving base branch safe to name in config.
 """
-import json, pathlib, subprocess
+import json, os, pathlib, subprocess
 
 
 class RefError(Exception):
@@ -47,3 +47,54 @@ def load(out):
     if not path.exists():
         raise RefError(f"{path} missing; run pairup.py first")
     return json.loads(path.read_text())
+
+
+FETCH_TIMEOUT = 60
+
+
+def remote_of(repo, ref, remotes=None):
+    """The remote a ref tracks, or None for a commit, a local branch or HEAD.
+
+    Split on the first slash only: branch names contain slashes, remote names
+    do not.
+    """
+    remotes = set(_git(repo, "remote").split()) if remotes is None else remotes
+    remote, slash, branch = ref.partition("/")
+    return remote if slash and remote in remotes and branch else None
+
+
+def fetch(repo, refs, timeout=FETCH_TIMEOUT):
+    """Update the remotes the review's refs live on. Returns (done, warnings).
+
+    A failure is never fatal: the refs already on disk still describe a real,
+    if older, state, and the page names the commits it used -- a stale review
+    that says which commits it is beats no review at all. The timeout is why
+    this is not just a `git fetch`; a remote the user cannot reach would
+    otherwise hang the build.
+    """
+    remotes = set(_git(repo, "remote").split())
+    wanted = sorted({r for ref in refs
+                     if (r := remote_of(repo, ref, remotes))})
+
+    done, warnings = [], []
+    for remote in wanted:
+        try:
+            proc = subprocess.run(
+                ["git", "fetch", "--quiet", remote], cwd=repo,
+                capture_output=True, text=True, timeout=timeout,
+                stdin=subprocess.DEVNULL,
+                # Fail fast instead of prompting. The timeout alone would not
+                # do it: a credential prompt reaches for the terminal, not
+                # stdin, and the user is looking at pass output, not at git.
+                env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+        except subprocess.TimeoutExpired:
+            warnings.append(f"git fetch {remote} timed out after {timeout}s; "
+                            "reviewing the refs already on disk")
+            continue
+        if proc.returncode:
+            detail = (proc.stderr.strip().splitlines() or ["no output"])[-1]
+            warnings.append(f"git fetch {remote} failed ({detail}); "
+                            "reviewing the refs already on disk")
+        else:
+            done.append(remote)
+    return done, warnings

@@ -49,6 +49,24 @@ def _env(args):
             "OUT": args.out or os.environ.get("OUT") or str(ROOT / "build")}
 
 
+def fetch_refs(env):
+    """Fetch before building, so `build` alone shows the PR as it stands.
+
+    Skipped entirely when neither ref tracks a remote -- the replay baseline
+    names commits, and there is nothing to fetch for a commit.
+    """
+    from refs import RefError, fetch
+    repo = env["REPO"] or None
+    try:
+        done, warnings = fetch(repo, [env["BASE"], env["HEAD_REF"]])
+    except RefError as exc:
+        warnings, done = [f"{exc}; reviewing the refs already on disk"], []
+    for remote in done:
+        print(f"== fetch {remote}", file=sys.stderr)
+    for warning in warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+
+
 class _OfflineGitHub:
     """Stands in when gh is unavailable, so the page still loads and honestly
     reports that nothing is being written back."""
@@ -110,18 +128,19 @@ def main(argv=None):
         parser.print_usage(sys.stderr)
         print("error: pick a subcommand: build, pairs, serve", file=sys.stderr)
         return 2
-    if args.cmd == "pairs":
-        return run_passes(["pairup.py"], _env(args))
-    if args.cmd == "build":
-        return run_passes(ALL_PASSES, _env(args))
+    env = _env(args)
+    if args.cmd in ("pairs", "build"):
+        fetch_refs(env)
+        return run_passes(["pairup.py"] if args.cmd == "pairs" else ALL_PASSES,
+                          env)
 
     # serve. Rebuilds every time unless told not to: the passes take seconds,
     # and a staleness heuristic that guesses wrong serves a stale page that
     # looks current -- the exact failure this tool exists to prevent.
     from config import load_config
     from server import serve
-    env = _env(args)
     if not args.no_build:
+        fetch_refs(env)
         code = run_passes(ALL_PASSES, env)
         if code:
             return code

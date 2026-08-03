@@ -7,7 +7,7 @@ the review; resolving to the merge base does not.
 import json, subprocess
 import pytest
 
-from refs import RefError, load, resolve, short
+from refs import RefError, fetch, load, remote_of, resolve, short
 
 
 def git(repo, *args):
@@ -96,3 +96,58 @@ def test_load_reads_what_pairup_wrote(tmp_path):
 def test_load_without_refs_json_says_which_pass_is_missing(tmp_path):
     with pytest.raises(RefError, match="pairup"):
         load(tmp_path)
+
+
+@pytest.fixture
+def clone(tmp_path):
+    """A clone whose origin gains a commit after the clone was taken."""
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    git(origin, "init", "--initial-branch=main")
+    git(origin, "config", "user.email", "t@example.com")
+    git(origin, "config", "user.name", "T")
+    (origin / "f.txt").write_text("one\n")
+    git(origin, "add", "-A")
+    git(origin, "commit", "--message", "one")
+    git(origin, "checkout", "-b", "refactor/deep/name")
+    git(origin, "commit", "--allow-empty", "--message", "branch work")
+
+    work = tmp_path / "work"
+    git(tmp_path, "clone", str(origin), str(work))
+    git(origin, "commit", "--allow-empty", "--message", "pushed later")
+    return work, git(origin, "rev-parse", "HEAD")
+
+
+def test_fetch_advances_the_remote_tracking_ref(clone):
+    """The whole point: work pushed after the last fetch becomes reviewable."""
+    work, pushed = clone
+    stale = git(work, "rev-parse", "origin/refactor/deep/name")
+    assert stale != pushed
+
+    done, warnings = fetch(work, ["origin/main", "origin/refactor/deep/name"])
+    assert done == ["origin"] and warnings == []
+    assert git(work, "rev-parse", "origin/refactor/deep/name") == pushed
+
+
+def test_fetch_is_skipped_when_the_refs_name_commits(clone):
+    """What keeps the pinned replay baseline off the network."""
+    work, _ = clone
+    assert fetch(work, ["52efff3", "1ce7bfa"]) == ([], [])
+
+
+def test_fetch_failure_is_reported_but_not_raised(clone):
+    """A build must survive being offline: older refs still describe a real
+    state, and the page names the commits it used."""
+    work, _ = clone
+    git(work, "remote", "set-url", "origin", str(work / "gone"))
+    done, warnings = fetch(work, ["origin/main"])
+    assert done == []
+    assert len(warnings) == 1 and "already on disk" in warnings[0]
+
+
+def test_remote_of_handles_slashes_in_branch_names(clone):
+    work, _ = clone
+    assert remote_of(work, "origin/refactor/deep/name") == "origin"
+    assert remote_of(work, "main") is None
+    assert remote_of(work, "HEAD") is None
+    assert remote_of(work, "52efff3") is None
