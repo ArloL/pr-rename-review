@@ -78,17 +78,28 @@ def test_get_viewed_reports_unsynced_rather_than_failing(live):
 def test_post_viewed_marks_the_file(live):
     gh = FakeGitHub()
     status, body = post(live(gh) + "/api/viewed",
-                        {"path": "a.java", "viewed": True})
-    assert status == 200 and body == {"path": "a.java", "state": "VIEWED"}
+                        {"paths": ["a.java"], "viewed": True})
+    assert status == 200 and body == {"paths": ["a.java"], "state": "VIEWED"}
     assert gh.writes == [("a.java", True)]
 
 
-def test_post_viewed_unmarks(live):
-    gh = FakeGitHub({"a.java": "VIEWED"})
+def test_post_viewed_marks_every_path_of_a_pair(live):
+    """A sub-threshold rename is two entries in GitHub's file list -- the
+    deleted old path and the added new path. One tick must cover both, or
+    GitHub's own progress never reaches 100%."""
+    gh = FakeGitHub()
     _, body = post(live(gh) + "/api/viewed",
-                   {"path": "a.java", "viewed": False})
+                   {"paths": ["new/B.java", "old/A.java"], "viewed": True})
+    assert body == {"paths": ["new/B.java", "old/A.java"], "state": "VIEWED"}
+    assert gh.writes == [("new/B.java", True), ("old/A.java", True)]
+
+
+def test_post_viewed_unmarks(live):
+    gh = FakeGitHub({"a.java": "VIEWED", "b.java": "VIEWED"})
+    _, body = post(live(gh) + "/api/viewed",
+                   {"paths": ["a.java", "b.java"], "viewed": False})
     assert body["state"] == "UNVIEWED"
-    assert gh.writes == [("a.java", False)]
+    assert gh.writes == [("a.java", False), ("b.java", False)]
 
 
 def test_post_failure_is_a_502_so_the_page_can_revert(live):
@@ -96,13 +107,28 @@ def test_post_failure_is_a_502_so_the_page_can_revert(live):
     that nobody reviewed, so the page must be told."""
     with pytest.raises(urllib.error.HTTPError) as exc:
         post(live(FakeGitHub(fail=True)) + "/api/viewed",
-             {"path": "a.java", "viewed": True})
+             {"paths": ["a.java"], "viewed": True})
     assert exc.value.code == 502
 
 
-def test_post_without_a_path_is_a_400(live):
+def test_post_without_paths_is_a_400(live):
     with pytest.raises(urllib.error.HTTPError) as exc:
         post(live(FakeGitHub()) + "/api/viewed", {"viewed": True})
+    assert exc.value.code == 400
+
+
+def test_post_with_empty_paths_is_a_400(live):
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        post(live(FakeGitHub()) + "/api/viewed", {"paths": [], "viewed": True})
+    assert exc.value.code == 400
+
+
+def test_post_with_a_bare_string_path_is_a_400(live):
+    """A string iterates as characters; marking one file per character must
+    be rejected, not half-executed."""
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        post(live(FakeGitHub()) + "/api/viewed",
+             {"paths": "a.java", "viewed": True})
     assert exc.value.code == 400
 
 

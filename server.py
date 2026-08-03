@@ -45,17 +45,24 @@ def make_server(page, gh, host="127.0.0.1", port=0):
                 body = json.loads(self.rfile.read(length) or b"{}")
             except json.JSONDecodeError:
                 return self._send(400, {"error": "malformed JSON"})
-            path = body.get("path")
-            if not path:
-                return self._send(400, {"error": "path is required"})
+            # A list, because a sub-threshold rename is two entries in
+            # GitHub's file list and one tick must cover both.
+            paths = body.get("paths")
+            if (not isinstance(paths, list) or not paths
+                    or not all(isinstance(p, str) and p for p in paths)):
+                return self._send(
+                    400, {"error": "paths must be a non-empty list of strings"})
             try:
-                state = gh.set_viewed(path, bool(body.get("viewed")))
+                for path in paths:
+                    state = gh.set_viewed(path, bool(body.get("viewed")))
             except GitHubError as exc:
                 # 502 rather than 200: the page must revert the tick, because
                 # a tick that did not reach GitHub is a file marked reviewed
-                # that nobody reviewed.
+                # that nobody reviewed. A pair that failed on its second path
+                # is reverted and retried whole; the mutations are idempotent,
+                # so the retry converges.
                 return self._send(502, {"error": str(exc)})
-            self._send(200, {"path": path, "state": state})
+            self._send(200, {"paths": paths, "state": state})
 
     return http.server.ThreadingHTTPServer((host, port), Handler)
 

@@ -44,7 +44,8 @@ def short(p):
 compact = []
 for f in files:
     compact.append({
-        "id": f["new"], "on": f["oldname"], "nn": f["newname"],
+        "id": f["new"], "oid": f["old"],
+        "on": f["oldname"], "nn": f["newname"],
         "op": short(f["oldpkg"]), "np": short(f["newpkg"]),
         "sim": f["sim"], "kind": f["kind"],
         "ght": short(f["gh_target"] or "") if f["gh_target"] else None,
@@ -304,7 +305,7 @@ const ix=document.getElementById('ix'),pane=document.getElementById('pane'),ixh=
 // here is the same tick a teammate sees on the PR. localStorage is the
 // fallback for when `gh` is unavailable.
 const KEY='hsp-hidden-renames-viewed-v1';
-let viewed=new Set(),synced=false,unknown=[];
+let viewed=new Set(),synced=false,unknown=[],known=new Set();
 function saveLocal(){{try{{localStorage.setItem(KEY,JSON.stringify([...viewed]));}}catch(e){{}}}}
 function loadLocal(){{try{{viewed=new Set(JSON.parse(localStorage.getItem(KEY)||'[]'));}}catch(e){{}}}}
 function isDone(f){{return viewed.has(f.id);}}
@@ -324,7 +325,7 @@ async function loadViewed(){{
       synced=true;
       viewed=new Set(Object.entries(j.states)
         .filter(([,v])=>v==='VIEWED').map(([k])=>k));
-      const known=new Set(Object.keys(j.states));
+      known=new Set(Object.keys(j.states));
       unknown=D.filter(f=>!known.has(f.id)).map(f=>f.id);
       banner(unknown.length
         ? 'Synced with GitHub — '+unknown.length+' file(s) missing from its list, see below'
@@ -341,21 +342,32 @@ async function loadViewed(){{
   draw();
 }}
 
+// A sub-threshold pair is two entries in GitHub's file list -- the deleted
+// old path and the added new path -- so one tick covers both. Mispaired
+// files are excluded: GitHub folded their old path into a bogus rename
+// entry, and there is nothing separate to tick. So is an old path GitHub
+// does not list, because the mutation would be rejected whole.
+function ghPaths(id){{
+  const f=D.find(f=>f.id===id);
+  return f&&f.kind==='split'&&known.has(f.oid)?[id,f.oid]:[id];
+}}
+
 async function setViewed(id,on){{
-  const had=viewed.has(id);
-  on?viewed.add(id):viewed.delete(id);
+  const paths=ghPaths(id);
+  const had=paths.filter(p=>viewed.has(p));
+  paths.forEach(p=>on?viewed.add(p):viewed.delete(p));
   draw();
   if(!synced||unknown.includes(id)){{saveLocal();return true;}}
   try{{
     const r=await fetch('/api/viewed',{{method:'POST',
       headers:{{'Content-Type':'application/json'}},
-      body:JSON.stringify({{path:id,viewed:on}})}});
+      body:JSON.stringify({{paths,viewed:on}})}});
     if(!r.ok)throw new Error(await r.text());
     return true;
   }}catch(e){{
     // Revert. A tick that never reached GitHub would mean a file marked
     // reviewed that nobody reviewed.
-    had?viewed.add(id):viewed.delete(id);
+    paths.forEach(p=>had.includes(p)?viewed.add(p):viewed.delete(p));
     banner('GitHub rejected that change — tick reverted',true);
     draw();
     return false;
@@ -486,7 +498,9 @@ document.addEventListener('keydown',e=>{{
 document.getElementById('reset').onclick=async()=>{{
   const btn=document.getElementById('reset');
   btn.disabled=true;
-  for(const id of [...viewed]){{await setViewed(id,false);}}
+  // Unmarking a pair's new path already unmarked its old path, so skip
+  // entries an earlier iteration cleared.
+  for(const id of [...viewed]){{if(viewed.has(id))await setViewed(id,false);}}
   btn.disabled=false;}};
 ix.addEventListener('click',e=>{{const b=e.target.closest('.item');if(!b)return;cur=+b.dataset.i;draw();toTop();}});
 document.getElementById('mN').onclick=()=>{{mode='N';sync();}};
