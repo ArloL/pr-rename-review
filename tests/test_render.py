@@ -44,20 +44,42 @@ def _pair(**kw):
     return base
 
 
-def _build_page(tmp_path, files):
+def _build_page(tmp_path, files, **env_overrides):
     out = tmp_path / "build"
     out.mkdir()
     (out / "diffdata2.json").write_text(json.dumps({"files": files}))
     (out / "refs.json").write_text(json.dumps(
         {"base": "a" * 40, "head": "b" * 40,
          "base_ref": "main", "head_ref": "topic"}))
-    # REPO points at a directory that is not a checkout, so the deep links
-    # are deterministically absent instead of resolving whatever repository
-    # the test happens to run inside.
-    env = {**os.environ, "OUT": str(out), "REPO": str(tmp_path)}
+    # render2.py reads PR/PR_OWNER/PR_REPO straight from the environment now,
+    # with no `gh` call to redirect -- so they are stripped from the
+    # forwarded environment here rather than merely left unset, guaranteeing
+    # deep links stay absent even if the shell running pytest happens to have
+    # them set. Tests that want deep links opt back in via env_overrides.
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("PR", "PR_OWNER", "PR_REPO")}
+    env["OUT"] = str(out)
+    env.update(env_overrides)
     subprocess.run([sys.executable, str(ROOT / "render2.py")], env=env,
                    cwd=ROOT, check=True, capture_output=True, text=True)
     return (out / "hidden-renames.html").read_text()
+
+
+def test_page_has_no_deep_links_without_a_resolved_pr(tmp_path):
+    """Nothing currently asserts on the `gh` field either way: a change that
+    broke deep links entirely, or one that leaked ambient PR env vars into
+    the page, would both pass silently otherwise."""
+    html = _build_page(tmp_path, [_pair()])
+    assert '"gh":null' in html
+    assert "github.com" not in html
+
+
+def test_page_has_deep_links_when_the_pr_is_resolved(tmp_path):
+    html = _build_page(tmp_path, [_pair()],
+                        PR="252", PR_OWNER="haeger", PR_REPO="hsp")
+    digest = hashlib.sha256(b"src/new/Foo.java").hexdigest()
+    assert (f'"gh":"https://github.com/haeger/hsp/pull/252/files'
+            f'#diff-{digest}"') in html
 
 
 def test_page_carries_the_old_path_of_each_pair(tmp_path):
