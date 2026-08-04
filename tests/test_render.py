@@ -1,40 +1,35 @@
 import hashlib, json, os, pathlib, subprocess, sys
 import pytest
-from config import Config
 from github import pr_url
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
-def cfg(pr=252):
-    return Config(base="main", head="HEAD", pr=pr)
-
-
 def test_pr_url_points_at_the_file_in_the_github_diff():
-    url = pr_url(cfg(), "haeger", "hsp", "src/Foo.java")
+    url = pr_url("haeger", "hsp", 252, "src/Foo.java")
     digest = hashlib.sha256(b"src/Foo.java").hexdigest()
     assert url == f"https://github.com/haeger/hsp/pull/252/files#diff-{digest}"
 
 
 def test_pr_url_can_target_a_line_on_the_new_side():
-    assert pr_url(cfg(), "haeger", "hsp", "src/Foo.java", 12).endswith("R12")
+    assert pr_url("haeger", "hsp", 252, "src/Foo.java", 12).endswith("R12")
 
 
 def test_pr_url_without_a_pr_number_returns_none():
     """A broken link is worse than no link."""
-    assert pr_url(cfg(pr=None), "haeger", "hsp", "src/Foo.java") is None
+    assert pr_url("haeger", "hsp", None, "src/Foo.java") is None
 
 
 def test_pr_url_without_a_resolved_repo_returns_none():
-    assert pr_url(cfg(), None, None, "src/Foo.java") is None
+    assert pr_url(None, None, 252, "src/Foo.java") is None
 
 
 def test_appending_a_line_to_the_file_url_gives_the_line_url():
     """The page builds line links in JavaScript as `${f.gh}R${n}` rather than
     carrying 1,489 precomputed URLs in the payload. That only works while the
     file URL ends with the anchor, which this pins down."""
-    file_url = pr_url(cfg(), "haeger", "hsp", "src/Foo.java")
-    line_url = pr_url(cfg(), "haeger", "hsp", "src/Foo.java", 12)
+    file_url = pr_url("haeger", "hsp", 252, "src/Foo.java")
+    line_url = pr_url("haeger", "hsp", 252, "src/Foo.java", 12)
     assert f"{file_url}R12" == line_url
 
 
@@ -49,20 +44,42 @@ def _pair(**kw):
     return base
 
 
-def _build_page(tmp_path, files):
+def _build_page(tmp_path, files, **env_overrides):
     out = tmp_path / "build"
     out.mkdir()
     (out / "diffdata2.json").write_text(json.dumps({"files": files}))
     (out / "refs.json").write_text(json.dumps(
         {"base": "a" * 40, "head": "b" * 40,
          "base_ref": "main", "head_ref": "topic"}))
-    # REPO points at a directory that is not a checkout, so the deep links
-    # are deterministically absent instead of resolving whatever repository
-    # the test happens to run inside.
-    env = {**os.environ, "OUT": str(out), "REPO": str(tmp_path)}
+    # render2.py reads PR/PR_OWNER/PR_REPO straight from the environment now,
+    # with no `gh` call to redirect -- so they are stripped from the
+    # forwarded environment here rather than merely left unset, guaranteeing
+    # deep links stay absent even if the shell running pytest happens to have
+    # them set. Tests that want deep links opt back in via env_overrides.
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("PR", "PR_OWNER", "PR_REPO")}
+    env["OUT"] = str(out)
+    env.update(env_overrides)
     subprocess.run([sys.executable, str(ROOT / "render2.py")], env=env,
                    cwd=ROOT, check=True, capture_output=True, text=True)
     return (out / "hidden-renames.html").read_text()
+
+
+def test_page_has_no_deep_links_without_a_resolved_pr(tmp_path):
+    """Nothing currently asserts on the `gh` field either way: a change that
+    broke deep links entirely, or one that leaked ambient PR env vars into
+    the page, would both pass silently otherwise."""
+    html = _build_page(tmp_path, [_pair()])
+    assert '"gh":null' in html
+    assert "github.com" not in html
+
+
+def test_page_has_deep_links_when_the_pr_is_resolved(tmp_path):
+    html = _build_page(tmp_path, [_pair()],
+                        PR="252", PR_OWNER="haeger", PR_REPO="hsp")
+    digest = hashlib.sha256(b"src/new/Foo.java").hexdigest()
+    assert (f'"gh":"https://github.com/haeger/hsp/pull/252/files'
+            f'#diff-{digest}"') in html
 
 
 def test_page_carries_the_old_path_of_each_pair(tmp_path):

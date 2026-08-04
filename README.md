@@ -18,14 +18,22 @@ original proposal, with the problem analysis and prior-art survey, is
 ```sh
 export REPO=/path/to/the/checkout          # the repo the PR lives in
 
-uv run pr-rename-review serve              # build, serve, open a browser
-uv run pr-rename-review build              # passes only, no server
-uv run pr-rename-review pairs              # disagreement report, then exit
+uv run pr-rename-review serve 259          # build, serve, open a browser
+uv run pr-rename-review build 259          # passes only, no server
+uv run pr-rename-review pairs 259          # disagreement report, then exit
 ```
 
-Flags: `--repo`, `--base`, `--head`, `--out`, `--no-build` (serve the existing
-`build/`), `--no-browser`. Refs default to `[repo]` in
-`.pr-rename-review.toml`.
+The pull request can be a number, `#259`, or its URL. Leave it out and the PR
+of the branch checked out in `$REPO` is reviewed.
+
+Base and head come from the PR itself: `gh` reports which branch it targets,
+and `refs/pull/259/head` is fetched into a private ref namespace along with
+that base branch. Nothing is configured, and nothing local has to be checked
+out — a PR from a fork needs no remote of its own.
+
+Flags: `--repo`, `--out`, `--no-build` (serve the existing `build/`),
+`--no-browser`, and `--base`/`--head`, which review two refs directly and
+skip GitHub entirely.
 
 `serve` rebuilds every time unless told not to. There is no staleness
 heuristic on purpose: the passes take seconds, and a heuristic that guesses
@@ -49,11 +57,6 @@ an exact per-commit rename that similarity guessing can never degrade. Only
 moves the history cannot prove — identical-blob shuffles, renames folded
 into content commits — fall back to git's endpoint guess.
 
-## Configuration
-
-`.pr-rename-review.toml` names the refs to review and the PR whose Viewed
-ticks to sync. Nothing else.
-
 ## Viewed state
 
 Per-file **Viewed** ticks are read from and written to GitHub through your own
@@ -63,9 +66,12 @@ never sees a token: it shells out to `gh api graphql`, and
 identity is why the prototype could not do this — an app token reports the
 app's ticks, which are always empty.
 
-Without `gh`, the page still works: viewed state falls back to `localStorage`
-and a banner says so. A write GitHub rejects reverts the tick rather than
-leaving a file marked reviewed that nobody reviewed.
+`gh` is required on the PR path: resolving which pull request to review is the
+first thing `build`/`serve`/`pairs` do, and without `gh` that fails before a
+page exists. On the `--base`/`--head` path there is no pull request to ask
+about, so the page still works: viewed state falls back to `localStorage` and
+a banner says so. A write GitHub rejects reverts the tick rather than leaving
+a file marked reviewed that nobody reviewed.
 
 **Comments are not written by this tool.** Each row carries a ↗ link into
 GitHub's own diff; comment there. This is a deliberate non-goal — see the
@@ -73,22 +79,31 @@ spec's "Commenting" section for why, and for what would justify changing it.
 
 ## Which commits get reviewed
 
-`[repo].base` and `[repo].head` name **moving** refs — `origin/main` and the PR
-branch — because the point is to review the PR as it stands. `build` and
-`serve` fetch first, so pushing and running again is enough; there is no
-separate fetch to forget. A fetch that fails is reported and the build carries
-on against the refs already on disk.
+Base and head name **moving** refs — the PR's base branch and its head —
+because the point is to review the PR as it stands. `build` and `serve` fetch
+first, so pushing and running again is enough; there is no separate fetch to
+forget. A fetch that fails is reported and the build carries on against the
+refs already on disk.
+
+Each fetch lands in a private namespace in `$REPO`,
+`refs/pr-rename-review/<number>/{base,head}`, so reviewing a PR never moves a
+ref you have opinions about. Nothing prunes it: old PRs' refs accumulate.
+`git update-ref -d refs/pr-rename-review/<number>/head` (and `/base`) drops
+one, or `git for-each-ref --format='%(refname)' refs/pr-rename-review | xargs
+-n1 git update-ref -d` clears all of them.
 
 The base is resolved to `git merge-base base head`, never to the base branch's
-tip. Against the tip, every commit `main` gained since the fork would show up
-inside the review as if the PR had made it. The page prints the commits it
-actually built from, so a build made before a fetch looks stale rather than
-passing for current.
+tip. Against the tip, every commit the base branch gained since the fork would
+appear inside the review as if the PR had made it. That is what makes a moving
+base safe: the PR is re-fetched on every build, so a push shows up on the page,
+and the page prints the commits it actually built from, so an older build is
+visibly older.
 
 ## Baseline
 
-The regression baseline is pinned separately, in `tests/conftest.py`, which is
-what lets the config refs move. Against `BASE=eb1b00665 HEAD_REF=47c9dc7`
+The regression baseline is pinned separately, in `tests/conftest.py`, so a
+real build's refs — resolved fresh from the PR on every run — can move
+without invalidating it. Against `BASE=eb1b00665 HEAD_REF=47c9dc7`
 (PR #259): 244 recorded moves, 10 pairing disagreements, 261 files in the
 review — 59 that GitHub splits into a delete plus an add, 3 it pairs to the
 wrong partner, 182 renames it shows correctly, 15 changed in place and 2 the
@@ -114,8 +129,8 @@ fail.
 moves. An earlier README recorded 24 disagreements / 63 pairs / 5,189 tokens /
 23 clean, measured against a state of the branch that has since advanced;
 those numbers do not reproduce at any current commit. Re-baselining is a
-deliberate act: point `tests/conftest.py` and `[repo].head` at the new commit
-and re-capture `tests/golden/`.
+deliberate act: point `tests/conftest.py` at the new commit and re-capture
+`tests/golden/`.
 
 ## Caveats worth keeping
 

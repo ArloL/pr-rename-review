@@ -5,7 +5,8 @@ The tool never holds a token. `gh` is already authenticated as the user, and
 why an app token sees nothing and this has to shell out. That token identity
 is the reason the prototype could not sync viewed state at all.
 """
-import hashlib, json, subprocess
+import hashlib, json, re, subprocess
+from dataclasses import dataclass
 
 FILES_QUERY = """
 query($owner:String!,$repo:String!,$pr:Int!,$after:String){
@@ -55,16 +56,16 @@ def anchor(path, line=None):
     return f"{frag}R{line}" if line else frag
 
 
-def pr_url(cfg, owner, repo, path, line=None):
+def pr_url(owner, repo, pr, path, line=None):
     """Deep link into GitHub's own diff. Commenting happens there -- this tool
     does not write comments, by design.
 
     Here rather than in render2.py because it is a pure function of its
     arguments, and render2.py cannot be imported without a build directory.
     """
-    if not (cfg.pr and owner and repo):
+    if not (pr and owner and repo):
         return None
-    return (f"https://github.com/{owner}/{repo}/pull/{cfg.pr}/files"
+    return (f"https://github.com/{owner}/{repo}/pull/{pr}/files"
             f"{anchor(path, line)}")
 
 
@@ -126,36 +127,56 @@ class GitHub:
         return "VIEWED" if viewed else "UNVIEWED"
 
 
-def resolve_repo(runner=None, cwd=None):
-    """(owner, repo) for the checkout. Used when the PR number is configured,
-    so no branch has to be checked out to find it."""
+PR_URL = re.compile(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)")
+
+
+@dataclass
+class PullRequest:
+    """The pull request under review: who to ask about it, and where it forks
+    from. `base_ref` is a branch name on the base repository, not a commit."""
+    owner: str
+    repo: str
+    number: int
+    base_ref: str
+
+
+def resolve_pr(spec=None, runner=None, cwd=None):
+    """The PR named by `spec`, or the one for the checked-out branch.
+
+    `spec` goes to `gh` verbatim -- it already accepts a number, a URL or
+    nothing -- less a leading `#`, which gh rejects and users type anyway.
+
+    owner/repo come from the `url` field, which names the repository the PR
+    *targets*. `headRepositoryOwner`/`headRepository` name the fork on a
+    cross-repository PR, and the viewed-state query would then run against a
+    repository that has no such pull request: every tick a silent no-op.
+    """
     run = runner or runner_for(cwd)
+    cmd = ["gh", "pr", "view"]
+    if spec:
+        cmd.append(str(spec).lstrip("#"))
     try:
-        raw = run(["gh", "repo", "view", "--json", "name,owner"])
+        raw = run(cmd + ["--json", "url,number,baseRefName"])
     except FileNotFoundError as exc:
         raise GitHubError(
             "gh not found -- install it and run `gh auth login`") from exc
+    except GitHubError as exc:
+        if spec:
+            raise
+        raise GitHubError(f"{exc}; name the pull request instead, e.g. "
+                          "`pr-rename-review serve 259`") from exc
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise GitHubError(f"unexpected output from gh: {raw[:200]!r}") from exc
-    return data["owner"]["login"], data["name"]
-
-
-def resolve_target(runner=None, cwd=None, ref=None):
-    """(owner, repo, pr_number) for the PR of `ref`, or of the current branch."""
-    run = runner or runner_for(cwd)
+    match = PR_URL.search(data.get("url") or "")
+    if not match:
+        raise GitHubError(f"cannot read a pull request url from gh: "
+                          f"{data.get('url')!r}")
+    owner, repo, _ = match.groups()
     try:
-        cmd = ["gh", "pr", "view"]
-        if ref:
-            cmd.append(ref)
-        raw = run(cmd + ["--json", "number,headRepository,headRepositoryOwner"])
-    except FileNotFoundError as exc:
-        raise GitHubError(
-            "gh not found -- install it and run `gh auth login`") from exc
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise GitHubError(f"unexpected output from gh: {raw[:200]!r}") from exc
-    return (data["headRepositoryOwner"]["login"],
-            data["headRepository"]["name"], data["number"])
+        number, base_ref = data["number"], data["baseRefName"]
+    except KeyError as exc:
+        raise GitHubError(f"gh's response is missing {exc}: "
+                          f"{data!r}") from exc
+    return PullRequest(owner, repo, int(number), base_ref)
