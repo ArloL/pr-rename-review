@@ -195,6 +195,20 @@ def test_serve_without_a_page_fails_clearly(no_network, monkeypatch, tmp_path,
     assert "does not exist" in capsys.readouterr().err
 
 
+def test_pairup_without_refs_says_how_to_run_it(tmp_path):
+    """pairup.py is runnable on its own -- conftest.py drives it directly --
+    so it has to say what it needs rather than resolve None."""
+    import os, subprocess, sys
+    from cli import ROOT
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("BASE", "HEAD_REF")}
+    proc = subprocess.run([sys.executable, str(ROOT / "pairup.py")],
+                          env={**env, "OUT": str(tmp_path)}, cwd=ROOT,
+                          capture_output=True, text=True)
+    assert proc.returncode != 0
+    assert "BASE and HEAD_REF" in proc.stderr
+
+
 def test_a_failing_pass_stops_the_run(no_network, monkeypatch, tmp_path):
     """A pass that fails must not let later passes run against its stale
     output -- that is how a truncated file becomes a wrong answer."""

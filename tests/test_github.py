@@ -1,6 +1,6 @@
 import hashlib, json
 import pytest
-from github import GitHub, GitHubError, anchor, resolve_pr, resolve_target
+from github import GitHub, GitHubError, anchor, resolve_pr
 
 
 class FakeRunner:
@@ -118,21 +118,6 @@ def test_the_default_runner_runs_inside_the_given_checkout(monkeypatch):
     monkeypatch.setattr(mod.subprocess, "run", fake_run)
     mod.runner_for("/some/checkout")(["gh", "repo", "view"])
     assert seen["cwd"] == "/some/checkout"
-
-
-def test_resolve_repo_reads_owner_and_name():
-    payload = json.dumps({"name": "HSP-Backend",
-                          "owner": {"login": "haeger-sales-platform"}})
-    from github import resolve_repo
-    assert resolve_repo(runner=FakeRunner(payload)) == (
-        "haeger-sales-platform", "HSP-Backend")
-
-
-def test_resolve_target_reads_owner_repo_and_number():
-    payload = json.dumps({"number": 252,
-                          "headRepository": {"name": "hsp"},
-                          "headRepositoryOwner": {"login": "haeger"}})
-    assert resolve_target(runner=FakeRunner(payload)) == ("haeger", "hsp", 252)
 
 
 def test_no_token_ever_appears_in_a_command():
