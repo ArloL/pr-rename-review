@@ -25,7 +25,7 @@ def _pull(spec=None, cwd=None):
 def no_network(monkeypatch):
     """Nothing in this file may reach GitHub or a git remote."""
     monkeypatch.setattr("cli.resolve_pr", _pull)
-    monkeypatch.setattr("cli.remote_for", lambda *a, **k: "origin")
+    monkeypatch.setattr("cli.remote_for", lambda *a, **k: ("origin", True))
     monkeypatch.setattr("cli.fetch_pull",
                         lambda *a, **k: ("BASEREF", "HEADREF", []))
     for name in ("PR", "PR_OWNER", "PR_REPO", "BASE", "HEAD_REF"):
@@ -53,10 +53,43 @@ def test_without_a_pr_argument_the_current_branch_is_asked(no_network,
     assert seen["spec"] is None, "a spec was invented for the bare form"
 
 
-def test_the_pr_argument_works_on_every_subcommand(no_network, monkeypatch):
+def test_the_pr_argument_works_on_every_subcommand(no_network, monkeypatch,
+                                                    tmp_path):
+    """Asserting only the return code would pass even if the spec were
+    dropped on the floor and the bare-branch PR resolved instead -- so this
+    checks the spec actually reaches resolve_pr, on all three subcommands."""
+    seen = []
+    monkeypatch.setattr("cli.resolve_pr",
+                        lambda spec, cwd=None: seen.append(spec) or _pull(spec))
     monkeypatch.setattr("cli.run_passes", lambda passes, env: 0)
+    monkeypatch.setattr("server.serve", lambda page, gh, **kw: None)
+    monkeypatch.setattr("cli._github", lambda pull, cwd=None: object())
+    (tmp_path / "hidden-renames.html").write_text("<h1>page</h1>")
+
     assert main(["pairs", "259"]) == 0
     assert main(["build", "https://github.com/haeger/hsp/pull/259"]) == 0
+    assert main(["--out", str(tmp_path), "--no-browser", "serve", "42"]) == 0
+
+    assert seen == ["259", "https://github.com/haeger/hsp/pull/259", "42"]
+
+
+def test_flags_parse_after_the_subcommand_too(no_network, monkeypatch,
+                                               tmp_path):
+    """--repo/--base/--head/--out/--no-build/--no-browser used to live only
+    on the top-level parser, so `pr` being a positional on each subparser
+    meant a flag typed after the subcommand -- as README:21-23's examples
+    invite -- raised SystemExit 2 instead of being recognized."""
+    (tmp_path / "hidden-renames.html").write_text("<h1>page</h1>")
+    monkeypatch.setattr("cli.run_passes", lambda p, e: 0)
+    monkeypatch.setattr("server.serve", lambda page, gh, **kw: None)
+    monkeypatch.setattr("cli._github", lambda pull, cwd=None: object())
+    assert main(["serve", "259", "--out", str(tmp_path), "--no-browser"]) == 0
+
+    seen = {}
+    monkeypatch.setattr("cli.run_passes",
+                        lambda passes, env: seen.update(env) or 0)
+    assert main(["build", "259", "--out", str(tmp_path)]) == 0
+    assert seen["OUT"] == str(tmp_path)
 
 
 def test_base_and_head_skip_github_entirely(monkeypatch):
@@ -104,7 +137,7 @@ def test_no_pr_for_the_branch_fails_with_a_usable_message(monkeypatch, capsys):
 def test_a_fetch_that_cannot_fall_back_fails_the_build(monkeypatch, capsys):
     from refs import RefError
     monkeypatch.setattr("cli.resolve_pr", _pull)
-    monkeypatch.setattr("cli.remote_for", lambda *a, **k: "origin")
+    monkeypatch.setattr("cli.remote_for", lambda *a, **k: ("origin", True))
 
     def never_fetched(*a, **k):
         raise RefError("git fetch origin failed (offline), and pull request "
@@ -114,18 +147,6 @@ def test_a_fetch_that_cannot_fall_back_fails_the_build(monkeypatch, capsys):
     monkeypatch.setattr("cli.run_passes", lambda p, env: 0)
     assert main(["build", "259"]) == 1
     assert "never been fetched" in capsys.readouterr().err
-
-
-def test_build_accepts_ref_overrides(monkeypatch):
-    monkeypatch.setattr("cli.fetch_refs", lambda repo, base, head: None)
-    for name in ("PR", "PR_OWNER", "PR_REPO"):
-        monkeypatch.delenv(name, raising=False)
-    seen = {}
-    monkeypatch.setattr("cli.run_passes",
-                        lambda passes, env: seen.update(env) or 0)
-    assert main(["--base", "abc", "--head", "def", "build"]) == 0
-    assert seen["BASE"] == "abc"
-    assert seen["HEAD_REF"] == "def"
 
 
 def test_pairs_runs_only_the_pairing_pass(no_network, monkeypatch):
@@ -156,6 +177,23 @@ def test_serve_can_skip_the_build(no_network, monkeypatch, tmp_path):
                  "serve"]) == 0
     assert called == [], "serve --no-build must not run the passes"
     assert served and served[0].name == "hidden-renames.html"
+
+
+def test_serve_no_build_skips_the_fetch_on_the_offline_path_too(
+        no_network, monkeypatch, tmp_path):
+    """The mirror of test_serve_no_build_still_resolves_the_pr, but for
+    --base/--head: prepare() honoured need_refs on the PR path already, and
+    not on this one, so `serve --no-build --base X --head Y` paid for a fetch
+    (up to 60s per remote) that was explicitly told not to rebuild."""
+    fetched = []
+    (tmp_path / "hidden-renames.html").write_text("<h1>page</h1>")
+    monkeypatch.setattr("cli.fetch_refs",
+                        lambda *a, **k: fetched.append(a) or None)
+    monkeypatch.setattr("server.serve", lambda page, gh, **kw: None)
+    monkeypatch.setattr("cli._github", lambda pull, cwd=None: object())
+    assert main(["--out", str(tmp_path), "--no-build", "--no-browser",
+                 "--base", "abc", "--head", "def", "serve"]) == 0
+    assert fetched == [], "--no-build fetched anyway"
 
 
 def test_serve_no_build_still_resolves_the_pr(no_network, monkeypatch,
@@ -225,3 +263,51 @@ def test_a_failing_pass_stops_the_run(no_network, monkeypatch, tmp_path):
     code = main(["--out", str(tmp_path), "build"])
     assert code == 1
     assert len(calls) == 1, "later passes ran after a failure"
+
+
+# _github is the only wiring between the resolved PR and the viewed-state
+# feature, and every serve test above monkeypatches it away -- so neither
+# branch is otherwise exercised. GitHub.__init__ makes no `gh` call, so
+# testing the real construction here still touches no network.
+def test_github_is_offline_when_no_pull_request_is_known():
+    from cli import _github
+    from github import GitHubError
+
+    gh = _github(None)
+    with pytest.raises(GitHubError, match="base/--head"):
+        gh.viewed_states()
+    with pytest.raises(GitHubError, match="base/--head"):
+        gh.set_viewed("a.java", True)
+
+
+def test_github_wires_the_resolved_pull_to_a_real_client():
+    from cli import _github
+    from github import GitHub, PullRequest
+
+    pull = PullRequest("haeger", "hsp", 259, "main")
+    gh = _github(pull, cwd="/some/checkout")
+    assert isinstance(gh, GitHub)
+    assert (gh.owner, gh.repo, gh.pr) == ("haeger", "hsp", 259)
+
+
+def test_a_remote_falling_back_to_origin_is_reported(monkeypatch, capsys):
+    """refs.py:128-129 -- in a fork checkout with no upstream remote, the
+    origin fallback can point refs/pull/<N>/head at a different repository's
+    PR #<N>. Silent, that is the one scenario where the tool is confidently
+    wrong rather than loudly wrong."""
+    monkeypatch.setattr("cli.resolve_pr", _pull)
+    monkeypatch.setattr("cli.remote_for", lambda *a, **k: ("origin", False))
+    monkeypatch.setattr("cli.fetch_pull",
+                        lambda *a, **k: ("BASEREF", "HEADREF", []))
+    monkeypatch.setattr("cli.run_passes", lambda p, env: 0)
+    assert main(["build", "259"]) == 0
+    err = capsys.readouterr().err
+    assert "no remote points at haeger/hsp" in err
+    assert "origin" in err
+
+
+def test_a_remote_that_matched_is_not_reported(no_network, monkeypatch,
+                                                capsys):
+    monkeypatch.setattr("cli.run_passes", lambda p, env: 0)
+    assert main(["build", "259"]) == 0
+    assert "no remote points at" not in capsys.readouterr().err

@@ -6,7 +6,7 @@ resolving again, so one run reviews one pair of commits even if the refs move
 underneath it.
 
 Resolving the base to the merge base rather than to the base branch's tip is
-what makes a moving base branch safe to name in config.
+what makes a moving base branch safe to review.
 """
 import json, os, pathlib, subprocess
 
@@ -115,7 +115,10 @@ def _slug(url):
 
 
 def remote_for(repo, owner, name):
-    """The remote pointing at owner/name, else origin.
+    """The remote pointing at owner/name, else origin. Returns (remote, matched)
+    -- `matched` is False on the origin fallback, so a caller can warn that
+    the remote it is about to fetch from was not actually verified to hold
+    this pull request.
 
     Matching the URL rather than assuming origin is what makes a fork checkout
     work: there origin is the fork, and the pull request lives upstream.
@@ -124,9 +127,9 @@ def remote_for(repo, owner, name):
     want = f"{owner}/{name}".lower()
     for remote in remotes:
         if _slug(_git(repo, "remote", "get-url", remote)) == want:
-            return remote
+            return remote, True
     if "origin" in remotes:
-        return "origin"
+        return "origin", False
     raise RefError(f"no remote points at {owner}/{name} and there is no "
                    f"origin; remotes found: {', '.join(remotes) or 'none'}")
 

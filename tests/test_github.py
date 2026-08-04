@@ -200,3 +200,13 @@ def test_resolve_pr_without_gh_names_the_fix():
 def test_resolve_pr_with_unparseable_output_becomes_GitHubError():
     with pytest.raises(GitHubError, match="unexpected"):
         resolve_pr(runner=FakeRunner("not json"))
+
+
+def test_resolve_pr_with_a_missing_field_becomes_GitHubError():
+    """A malformed --json payload used to raise a bare KeyError, which
+    main's `except (GitHubError, RefError)` does not catch -- a traceback
+    instead of an error line."""
+    payload = json.dumps({"url": "https://github.com/haeger/hsp/pull/259",
+                          "baseRefName": "main"})  # no "number"
+    with pytest.raises(GitHubError, match="number"):
+        resolve_pr(runner=FakeRunner(payload))
