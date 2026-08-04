@@ -52,7 +52,7 @@ Resolve a PR spec to owner, repository, number and base branch. Nothing consumes
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `tests/test_github.py`. Note `resolve_pr` is added to the import on line 3 in Step 3 — for now import it inside the test module header as shown.
+First extend the import on line 3 to `from github import GitHub, GitHubError, anchor, resolve_pr, resolve_target`, then append these tests.
 
 ```python
 PR_VIEW = json.dumps({"url": "https://github.com/haeger/hsp/pull/259",
@@ -60,14 +60,12 @@ PR_VIEW = json.dumps({"url": "https://github.com/haeger/hsp/pull/259",
 
 
 def test_resolve_pr_reads_owner_repo_number_and_base():
-    from github import resolve_pr
     pull = resolve_pr(runner=FakeRunner(PR_VIEW))
     assert (pull.owner, pull.repo, pull.number, pull.base_ref) == (
         "haeger", "hsp", 259, "main")
 
 
 def test_resolve_pr_without_a_spec_asks_about_the_current_branch():
-    from github import resolve_pr
     runner = FakeRunner(PR_VIEW)
     resolve_pr(runner=runner)
     assert runner.calls[0][:3] == ["gh", "pr", "view"]
@@ -75,7 +73,6 @@ def test_resolve_pr_without_a_spec_asks_about_the_current_branch():
 
 
 def test_resolve_pr_passes_a_number_through():
-    from github import resolve_pr
     runner = FakeRunner(PR_VIEW)
     resolve_pr("259", runner=runner)
     assert runner.calls[0][3] == "259"
@@ -83,14 +80,12 @@ def test_resolve_pr_passes_a_number_through():
 
 def test_resolve_pr_strips_a_leading_hash():
     """`gh pr view '#259'` is rejected by gh; a user typing it should not be."""
-    from github import resolve_pr
     runner = FakeRunner(PR_VIEW)
     resolve_pr("#259", runner=runner)
     assert runner.calls[0][3] == "259"
 
 
 def test_resolve_pr_passes_a_url_through():
-    from github import resolve_pr
     url = "https://github.com/haeger/hsp/pull/259"
     runner = FakeRunner(PR_VIEW)
     resolve_pr(url, runner=runner)
@@ -101,7 +96,6 @@ def test_resolve_pr_uses_the_base_repository_not_the_fork():
     """A pull request lives on the repository it targets. Asking the fork
     about #259 finds nothing, and every viewed tick would silently no-op --
     which is why headRepository* is the wrong field to read."""
-    from github import resolve_pr
     payload = json.dumps({"url": "https://github.com/haeger/hsp/pull/259",
                           "number": 259, "baseRefName": "main",
                           "headRepository": {"name": "hsp-fork"},
@@ -112,7 +106,6 @@ def test_resolve_pr_uses_the_base_repository_not_the_fork():
 
 def test_resolve_pr_without_a_pr_for_the_branch_names_the_fix():
     """The branch having no PR is the one failure a new user will hit."""
-    from github import resolve_pr
     runner = FakeRunner(GitHubError("no pull requests found for branch main"))
     with pytest.raises(GitHubError, match="pr-rename-review serve 259"):
         resolve_pr(runner=runner)
@@ -120,20 +113,17 @@ def test_resolve_pr_without_a_pr_for_the_branch_names_the_fix():
 
 def test_resolve_pr_with_a_spec_reports_ghs_own_error_unchanged():
     """gh already says what is wrong with an explicit spec; do not bury it."""
-    from github import resolve_pr
     runner = FakeRunner(GitHubError("no pull request found for 999"))
     with pytest.raises(GitHubError, match="999"):
         resolve_pr("999", runner=runner)
 
 
 def test_resolve_pr_without_gh_names_the_fix():
-    from github import resolve_pr
     with pytest.raises(GitHubError, match="gh auth login"):
         resolve_pr(runner=FakeRunner(FileNotFoundError("gh")))
 
 
 def test_resolve_pr_with_unparseable_output_becomes_GitHubError():
-    from github import resolve_pr
     with pytest.raises(GitHubError, match="unexpected"):
         resolve_pr(runner=FakeRunner("not json"))
 ```
@@ -1062,7 +1052,7 @@ git rm config.py .pr-rename-review.toml tests/test_config.py
 
 In `github.py`, delete the `resolve_repo` and `resolve_target` functions entirely (currently lines 129-161, after Task 1's additions shifted them). `resolve_pr` supersedes both.
 
-In `tests/test_github.py`: change line 3 to `from github import GitHub, GitHubError, anchor, resolve_pr`, delete `test_resolve_repo_reads_owner_and_name` and `test_resolve_target_reads_owner_repo_and_number`, and drop the now-redundant per-test `from github import resolve_pr` lines added in Task 1.
+In `tests/test_github.py`: change line 3 to `from github import GitHub, GitHubError, anchor, resolve_pr`, and delete `test_resolve_repo_reads_owner_and_name` and `test_resolve_target_reads_owner_repo_and_number`.
 
 In `pyproject.toml`, remove `"config.py",` from the wheel include list, leaving:
 
