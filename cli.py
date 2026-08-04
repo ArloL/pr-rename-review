@@ -88,7 +88,8 @@ def prepare(args, need_refs=True):
     base = args.base or os.environ.get("BASE")
     head = args.head or os.environ.get("HEAD_REF")
     if base and head:
-        fetch_refs(repo, base, head)
+        if need_refs:
+            fetch_refs(repo, base, head)
         return _env(args, None, base, head), None
     if base or head:
         raise RefError("--base and --head must be given together, or neither "
@@ -99,7 +100,15 @@ def prepare(args, need_refs=True):
         # serve --no-build: the PR is still needed to sync viewed ticks, but
         # nothing is being built, so nothing is fetched.
         return _env(args, pull, "", ""), pull
-    remote = remote_for(repo, pull.owner, pull.repo)
+    remote, matched = remote_for(repo, pull.owner, pull.repo)
+    if not matched:
+        # The one scenario where this tool is confidently wrong rather than
+        # loudly wrong: in a fork checkout with no upstream remote, origin's
+        # own refs/pull/<number>/head can hold an unrelated PR with the same
+        # number.
+        print(f"warning: no remote points at {pull.owner}/{pull.repo}; "
+              f"falling back to {remote}, whose refs/pull/{pull.number}/head "
+              "may name a different pull request", file=sys.stderr)
     print(f"== fetch {remote} refs/pull/{pull.number}/head", file=sys.stderr)
     base, head, warnings = fetch_pull(repo, remote, pull.number, pull.base_ref)
     for warning in warnings:
@@ -133,24 +142,55 @@ def _github(pull, cwd=None):
     return GitHub(pull.owner, pull.repo, pull.number, cwd=cwd)
 
 
+# Real defaults for the flags shared between `p` and every subparser. Kept
+# out of add_argument()'s own `default=` -- see the SUPPRESS comment in
+# _parser() for why -- and applied once after parsing instead.
+_COMMON_DEFAULTS = {"repo": None, "base": None, "head": None, "out": None,
+                    "no_build": False, "no_browser": False}
+
+
 def _parser():
+    # A parent parser rather than flags on `p` alone: with only the latter,
+    # argparse accepts a flag before the subcommand but not after, and the
+    # README shows `pr-rename-review serve 259 --no-browser` -- flags-after
+    # has to parse too. `parents=[common]` on each subparser makes the
+    # tokens parse either way, but it is not enough by itself: when the
+    # subparsers action dispatches, it parses the remainder with a *fresh*
+    # namespace and then copies every one of that namespace's keys onto the
+    # real one -- including the untouched flags, filled in with their
+    # defaults. That unconditionally stomps a value a flag set *before* the
+    # subcommand. Giving each common action `default=SUPPRESS` stops it: an
+    # unset flag is then simply absent from the fresh namespace rather than
+    # present with a default, so the copy has nothing to stomp with. The
+    # real defaults go on afterward, in main(), once both passes are done.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--repo", default=argparse.SUPPRESS,
+                        help="checkout to diff (default: $REPO; falls back "
+                            "to cwd, which is this tool's own directory "
+                            "when run via `uv run`, not the checkout you "
+                            "mean)")
+    common.add_argument("--base", default=argparse.SUPPRESS,
+                        help="base ref, skipping GitHub (needs --head)")
+    common.add_argument("--head", default=argparse.SUPPRESS,
+                        help="head ref, skipping GitHub (needs --base)")
+    common.add_argument("--out", default=argparse.SUPPRESS,
+                        help="output directory (default: ./build)")
+    common.add_argument("--no-build", action="store_true",
+                        default=argparse.SUPPRESS,
+                        help="serve the existing build/ without rebuilding")
+    common.add_argument("--no-browser", action="store_true",
+                        default=argparse.SUPPRESS,
+                        help="do not open a browser when serving")
+
     p = argparse.ArgumentParser(
-        prog="pr-rename-review",
+        prog="pr-rename-review", parents=[common],
         description="Review a rename-heavy PR that GitHub's diff cannot pair")
-    p.add_argument("--repo", help="checkout to diff (default: $REPO or cwd)")
-    p.add_argument("--base", help="base ref, skipping GitHub (needs --head)")
-    p.add_argument("--head", help="head ref, skipping GitHub (needs --base)")
-    p.add_argument("--out", help="output directory (default: ./build)")
-    p.add_argument("--no-build", action="store_true",
-                   help="serve the existing build/ without rebuilding")
-    p.add_argument("--no-browser", action="store_true",
-                   help="do not open a browser when serving")
     sub = p.add_subparsers(dest="cmd")
     for name, help_text in (
             ("build", "run the passes and write the page"),
             ("pairs", "print the pairing disagreement report"),
             ("serve", "build, then serve the page on localhost")):
-        s = sub.add_parser(name, help=help_text)
+        s = sub.add_parser(name, help=help_text, parents=[common])
         s.add_argument("pr", nargs="?", metavar="PR",
                        help="pull request: number, #number or URL "
                             "(default: the PR of the checked-out branch)")
@@ -161,6 +201,9 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     parser = _parser()
     args = parser.parse_args(argv)
+    for dest, default in _COMMON_DEFAULTS.items():
+        if not hasattr(args, dest):
+            setattr(args, dest, default)
 
     if not args.cmd:
         parser.print_usage(sys.stderr)

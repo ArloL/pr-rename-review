@@ -4,7 +4,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from github import pr_url
 from refs import load
 
-S = pathlib.Path(__file__).parent
 OUT = pathlib.Path(os.environ.get("OUT") or (pathlib.Path(__file__).parent / "build"))
 OUT.mkdir(parents=True, exist_ok=True)
 files = json.loads((OUT / "diffdata2.json").read_text())["files"]

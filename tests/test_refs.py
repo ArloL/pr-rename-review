@@ -271,13 +271,13 @@ def test_remote_for_matches_the_url_rather_than_trusting_origin(tmp_path):
     r = bare(tmp_path)
     git(r, "remote", "add", "origin", "git@github.com:contributor/hsp.git")
     git(r, "remote", "add", "upstream", "https://github.com/haeger/hsp.git")
-    assert remote_for(r, "haeger", "hsp") == "upstream"
+    assert remote_for(r, "haeger", "hsp") == ("upstream", True)
 
 
 def test_remote_for_matches_the_ssh_url_form(tmp_path):
     r = bare(tmp_path)
     git(r, "remote", "add", "ssh", "git@github.com:haeger/hsp.git")
-    assert remote_for(r, "haeger", "hsp") == "ssh"
+    assert remote_for(r, "haeger", "hsp") == ("ssh", True)
 
 
 def test_remote_for_ignores_case(tmp_path):
@@ -285,13 +285,15 @@ def test_remote_for_ignores_case(tmp_path):
     whatever the user typed."""
     r = bare(tmp_path)
     git(r, "remote", "add", "origin", "https://github.com/Haeger/HSP.git")
-    assert remote_for(r, "haeger", "hsp") == "origin"
+    assert remote_for(r, "haeger", "hsp") == ("origin", True)
 
 
 def test_remote_for_falls_back_to_origin(tmp_path):
+    """`matched` is False here -- the caller's cue that this remote was never
+    actually verified to hold the pull request being asked for."""
     r = bare(tmp_path)
     git(r, "remote", "add", "origin", "https://example.invalid/other/thing.git")
-    assert remote_for(r, "haeger", "hsp") == "origin"
+    assert remote_for(r, "haeger", "hsp") == ("origin", False)
 
 
 def test_remote_for_without_any_remote_names_the_problem(tmp_path):

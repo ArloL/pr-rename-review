@@ -174,4 +174,9 @@ def resolve_pr(spec=None, runner=None, cwd=None):
         raise GitHubError(f"cannot read a pull request url from gh: "
                           f"{data.get('url')!r}")
     owner, repo, _ = match.groups()
-    return PullRequest(owner, repo, int(data["number"]), data["baseRefName"])
+    try:
+        number, base_ref = data["number"], data["baseRefName"]
+    except KeyError as exc:
+        raise GitHubError(f"gh's response is missing {exc}: "
+                          f"{data!r}") from exc
+    return PullRequest(owner, repo, int(number), base_ref)
