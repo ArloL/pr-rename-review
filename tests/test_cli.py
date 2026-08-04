@@ -67,8 +67,11 @@ def test_base_and_head_skip_github_entirely(monkeypatch):
 
     monkeypatch.setattr("cli.resolve_pr", boom)
     monkeypatch.setattr("cli.fetch_refs", lambda repo, base, head: None)
-    for name in ("PR", "PR_OWNER", "PR_REPO"):
+    for name in ("PR_OWNER", "PR_REPO"):
         monkeypatch.delenv(name, raising=False)
+    # A stray PR left over from some earlier ambient shell must not leak
+    # through: this is what _env's pop-before-set is actually guarding.
+    monkeypatch.setenv("PR", "999")
     seen = {}
     monkeypatch.setattr("cli.run_passes", lambda p, env: seen.update(env) or 0)
     assert main(["--base", "abc", "--head", "def", "build"]) == 0
