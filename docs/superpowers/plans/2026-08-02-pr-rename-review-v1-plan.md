@@ -1949,7 +1949,8 @@ GitHub's PR UI". Nothing so far proves it in GitHub's own interface.
 
 **Files:**
 - Modify: `README.md`
-- Modify: `2026-08-02-pr-rename-review-v1-spec.md` (status line only)
+- Modify: `docs/superpowers/specs/2026-08-02-pr-rename-review-v1-spec.md`
+  (status line only)
 
 - [ ] **Step 1: Perform the manual round-trip against the real PR**
 
@@ -2010,7 +2011,7 @@ recording the outcome of the Step 1 round-trip check.
 
 ```bash
 uv run pytest --verbose
-git add README.md 2026-08-02-pr-rename-review-v1-spec.md
+git add README.md docs/superpowers/specs/2026-08-02-pr-rename-review-v1-spec.md
 git commit --message "docs: document the v1 tool and record the GitHub round-trip"
 ```
 

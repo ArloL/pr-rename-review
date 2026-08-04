@@ -9,9 +9,9 @@ by side. This tool pairs them from the branch's **recorded moves** instead —
 the exact per-commit renames a dedicated rename commit leaves behind — and
 word-diffs every file of the PR in one reviewable, tickable page.
 
-Design: `2026-08-02-pr-rename-review-v1-spec.md`. The original proposal, with
-the problem analysis and prior-art survey, is
-`2026-08-02-pr-rename-review-tool-design.md`.
+Design: `docs/superpowers/specs/2026-08-02-pr-rename-review-v1-spec.md`. The
+original proposal, with the problem analysis and prior-art survey, is
+`docs/superpowers/specs/2026-08-02-pr-rename-review-tool-design.md`.
 
 ## Using it
 
