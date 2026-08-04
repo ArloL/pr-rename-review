@@ -1,8 +1,7 @@
 import json, os, pathlib, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from config import load_config
-from github import GitHubError, anchor, pr_url, resolve_repo, resolve_target
+from github import pr_url
 from refs import load
 
 S = pathlib.Path(__file__).parent
@@ -10,21 +9,21 @@ OUT = pathlib.Path(os.environ.get("OUT") or (pathlib.Path(__file__).parent / "bu
 OUT.mkdir(parents=True, exist_ok=True)
 files = json.loads((OUT / "diffdata2.json").read_text())["files"]
 
-CFG = load_config(S / ".pr-rename-review.toml")
-# From the run, never from CFG: with a moving head ref the ref name alone is
-# true of every build ever made, and `--base`/`--head` overrides do not reach
-# CFG at all. Printing the commit is what makes a stale page look stale.
+# From the run, never from a ref name: with a moving head ref the name alone
+# is true of every build ever made, and `--base`/`--head` overrides carry no
+# name at all. Printing the commit is what makes a stale page look stale.
 REFS = load(OUT)
 BASE_SHORT, HEAD_SHORT = REFS["base"][:9], REFS["head"][:9]
 SUMMARY = json.loads((OUT / "scope-summary.json").read_text()) if (
     OUT / "scope-summary.json").exists() else {}
 
-# `build` must work with no gh available; the deep links are simply absent.
-try:
-    _repo_cwd = os.environ.get("REPO") or None
-    OWNER, REPO_NAME = resolve_repo(cwd=_repo_cwd)
-except (GitHubError, KeyError):
-    OWNER = REPO_NAME = None
+# Resolved once by cli.py and handed down, so every pass agrees on which PR
+# this is and only one gh call is made per run. `build` must work with no gh
+# at all -- and with `--base`/`--head`, where there is no PR; the deep links
+# are simply absent then.
+PR = int(os.environ["PR"]) if os.environ.get("PR") else None
+OWNER = os.environ.get("PR_OWNER") or None
+REPO_NAME = os.environ.get("PR_REPO") or None
 
 
 PFX = [("src/main/java/de/haegerconsulting/hsp/", "main·"),
@@ -49,7 +48,7 @@ for f in files:
         "sim": f["sim"], "kind": f["kind"],
         "ght": short(f["gh_target"] or "") if f["gh_target"] else None,
         "ghs": f["gh_score"], "area": f["area"], "prev": f["prev"],
-        "gh": pr_url(CFG, OWNER, REPO_NAME, f["new"]),
+        "gh": pr_url(OWNER, REPO_NAME, PR, f["new"]),
         "rc": f["raw_c"], "rw": f["raw_w"], "L": f["lines"],
         "R": [[r[0], r[1], r[2], r[3], r[4]] for r in f["raw"]]})
 
