@@ -66,9 +66,12 @@ never sees a token: it shells out to `gh api graphql`, and
 identity is why the prototype could not do this — an app token reports the
 app's ticks, which are always empty.
 
-Without `gh`, the page still works: viewed state falls back to `localStorage`
-and a banner says so. A write GitHub rejects reverts the tick rather than
-leaving a file marked reviewed that nobody reviewed.
+`gh` is required on the PR path: resolving which pull request to review is the
+first thing `build`/`serve`/`pairs` do, and without `gh` that fails before a
+page exists. On the `--base`/`--head` path there is no pull request to ask
+about, so the page still works: viewed state falls back to `localStorage` and
+a banner says so. A write GitHub rejects reverts the tick rather than leaving
+a file marked reviewed that nobody reviewed.
 
 **Comments are not written by this tool.** Each row carries a ↗ link into
 GitHub's own diff; comment there. This is a deliberate non-goal — see the
@@ -81,6 +84,13 @@ because the point is to review the PR as it stands. `build` and `serve` fetch
 first, so pushing and running again is enough; there is no separate fetch to
 forget. A fetch that fails is reported and the build carries on against the
 refs already on disk.
+
+Each fetch lands in a private namespace in `$REPO`,
+`refs/pr-rename-review/<number>/{base,head}`, so reviewing a PR never moves a
+ref you have opinions about. Nothing prunes it: old PRs' refs accumulate.
+`git update-ref -d refs/pr-rename-review/<number>/head` (and `/base`) drops
+one, or `git for-each-ref --format='%(refname)' refs/pr-rename-review | xargs
+-n1 git update-ref -d` clears all of them.
 
 The base is resolved to `git merge-base base head`, never to the base branch's
 tip. Against the tip, every commit the base branch gained since the fork would
