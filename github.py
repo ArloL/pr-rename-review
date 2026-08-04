@@ -127,41 +127,6 @@ class GitHub:
         return "VIEWED" if viewed else "UNVIEWED"
 
 
-def resolve_repo(runner=None, cwd=None):
-    """(owner, repo) for the checkout. Used when the PR number is configured,
-    so no branch has to be checked out to find it."""
-    run = runner or runner_for(cwd)
-    try:
-        raw = run(["gh", "repo", "view", "--json", "name,owner"])
-    except FileNotFoundError as exc:
-        raise GitHubError(
-            "gh not found -- install it and run `gh auth login`") from exc
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise GitHubError(f"unexpected output from gh: {raw[:200]!r}") from exc
-    return data["owner"]["login"], data["name"]
-
-
-def resolve_target(runner=None, cwd=None, ref=None):
-    """(owner, repo, pr_number) for the PR of `ref`, or of the current branch."""
-    run = runner or runner_for(cwd)
-    try:
-        cmd = ["gh", "pr", "view"]
-        if ref:
-            cmd.append(ref)
-        raw = run(cmd + ["--json", "number,headRepository,headRepositoryOwner"])
-    except FileNotFoundError as exc:
-        raise GitHubError(
-            "gh not found -- install it and run `gh auth login`") from exc
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise GitHubError(f"unexpected output from gh: {raw[:200]!r}") from exc
-    return (data["headRepositoryOwner"]["login"],
-            data["headRepository"]["name"], data["number"])
-
-
 PR_URL = re.compile(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)")
 
 

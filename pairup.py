@@ -105,13 +105,13 @@ def git_pairing(repo, base, head):
 
 
 def main():
-    from config import load_config
-    cfg = load_config(S / ".pr-rename-review.toml")
     repo = os.environ.get("REPO") or subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
         capture_output=True, text=True).stdout.strip()
-    base_ref = os.environ.get("BASE", cfg.base)
-    head_ref = os.environ.get("HEAD_REF", cfg.head)
+    base_ref, head_ref = os.environ.get("BASE"), os.environ.get("HEAD_REF")
+    if not (base_ref and head_ref):
+        sys.exit("BASE and HEAD_REF must both be set; run this through "
+                 "`pr-rename-review`, which resolves them from the PR")
     base, head = resolve(repo, base_ref, head_ref)
 
     OUT.mkdir(parents=True, exist_ok=True)
