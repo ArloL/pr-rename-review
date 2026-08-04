@@ -5,7 +5,8 @@ The tool never holds a token. `gh` is already authenticated as the user, and
 why an app token sees nothing and this has to shell out. That token identity
 is the reason the prototype could not sync viewed state at all.
 """
-import hashlib, json, subprocess
+import hashlib, json, re, subprocess
+from dataclasses import dataclass
 
 FILES_QUERY = """
 query($owner:String!,$repo:String!,$pr:Int!,$after:String){
@@ -159,3 +160,53 @@ def resolve_target(runner=None, cwd=None, ref=None):
         raise GitHubError(f"unexpected output from gh: {raw[:200]!r}") from exc
     return (data["headRepositoryOwner"]["login"],
             data["headRepository"]["name"], data["number"])
+
+
+PR_URL = re.compile(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)")
+
+
+@dataclass
+class PullRequest:
+    """The pull request under review: who to ask about it, and where it forks
+    from. `base_ref` is a branch name on the base repository, not a commit."""
+    owner: str
+    repo: str
+    number: int
+    base_ref: str
+
+
+def resolve_pr(spec=None, runner=None, cwd=None):
+    """The PR named by `spec`, or the one for the checked-out branch.
+
+    `spec` goes to `gh` verbatim -- it already accepts a number, a URL or
+    nothing -- less a leading `#`, which gh rejects and users type anyway.
+
+    owner/repo come from the `url` field, which names the repository the PR
+    *targets*. `headRepositoryOwner`/`headRepository` name the fork on a
+    cross-repository PR, and the viewed-state query would then run against a
+    repository that has no such pull request: every tick a silent no-op.
+    """
+    run = runner or runner_for(cwd)
+    cmd = ["gh", "pr", "view"]
+    if spec:
+        cmd.append(str(spec).lstrip("#"))
+    try:
+        raw = run(cmd + ["--json", "url,number,baseRefName"])
+    except FileNotFoundError as exc:
+        raise GitHubError(
+            "gh not found -- install it and run `gh auth login`") from exc
+    except GitHubError as exc:
+        if spec:
+            raise
+        raise GitHubError(f"{exc}; name the pull request instead, e.g. "
+                          "`pr-rename-review serve 259`") from exc
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise GitHubError(f"unexpected output from gh: {raw[:200]!r}") from exc
+    match = PR_URL.search(data.get("url") or "")
+    if not match:
+        raise GitHubError(f"cannot read a pull request url from gh: "
+                          f"{data.get('url')!r}")
+    owner, repo, _ = match.groups()
+    return PullRequest(owner, repo, int(data["number"]), data["baseRefName"])
