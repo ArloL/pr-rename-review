@@ -1,3 +1,4 @@
+import os, pathlib, subprocess
 import pytest
 from cli import ALL_PASSES, main
 
@@ -250,19 +251,25 @@ def test_pairup_without_refs_says_how_to_run_it(tmp_path):
 def test_a_failing_pass_stops_the_run(no_network, monkeypatch, tmp_path):
     """A pass that fails must not let later passes run against its stale
     output -- that is how a truncated file becomes a wrong answer."""
-    calls = []
+    # Only the pass invocations are counted: cli.subprocess.run also carries
+    # repo_root's `git rev-parse --show-toplevel`, and counting that as the
+    # first call would let the first pass succeed and pass this test for the
+    # wrong reason.
+    passes = []
 
     def fake_run(cmd, **kw):
-        calls.append(cmd)
+        is_pass = any(str(part).endswith(".py") for part in cmd)
+        if is_pass:
+            passes.append(cmd)
         class P:
-            returncode = 1 if len(calls) == 1 else 0
+            returncode = 1 if is_pass and len(passes) == 1 else 0
             stdout, stderr = "", "boom"
         return P()
 
     monkeypatch.setattr("cli.subprocess.run", fake_run)
     code = main(["--out", str(tmp_path), "build"])
     assert code == 1
-    assert len(calls) == 1, "later passes ran after a failure"
+    assert len(passes) == 1, "later passes ran after a failure"
 
 
 # _github is the only wiring between the resolved PR and the viewed-state
@@ -311,3 +318,158 @@ def test_a_remote_that_matched_is_not_reported(no_network, monkeypatch,
     monkeypatch.setattr("cli.run_passes", lambda p, env: 0)
     assert main(["build", "259"]) == 0
     assert "no remote points at" not in capsys.readouterr().err
+
+
+# --- running the tool from the repository under review -------------------
+#
+# `uvx --from git+https://github.com/ArloL/pr-rename-review pr-rename-review
+# serve 259`, typed inside the checkout the PR lives in, has to work with
+# neither --repo nor $REPO. There the tool is unpacked into a uv cache
+# directory: cli.ROOT is no checkout at all, so nothing about where this file
+# lives can name the repository or a place to write.
+
+
+def _checkout(path):
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "--quiet"], cwd=path, check=True)
+    return path.resolve()
+
+
+@pytest.fixture
+def standing_in(tmp_path, monkeypatch):
+    """A real checkout, entered, with $REPO and $OUT out of the way so the
+    defaults are what these tests actually exercise."""
+    repo = _checkout(tmp_path / "target")
+    for name in ("REPO", "OUT"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.chdir(repo)
+    return repo
+
+
+@pytest.fixture
+def built(monkeypatch):
+    """Capture the environment the passes would have been run with."""
+    seen = {}
+    monkeypatch.setattr("cli.run_passes",
+                        lambda passes, env: seen.update(env) or 0)
+    return seen
+
+
+def _same(a, b):
+    # Absoluteness is asserted, not assumed: `Path("").resolve()` is the
+    # current directory, so an empty $REPO -- what the passes used to be
+    # handed -- would compare equal to the checkout the test is standing in
+    # and prove nothing.
+    assert a and pathlib.Path(a).is_absolute(), f"not an absolute path: {a!r}"
+    return pathlib.Path(a).resolve() == pathlib.Path(b).resolve()
+
+
+def test_the_checkout_you_are_standing_in_is_reviewed(no_network, built,
+                                                       standing_in):
+    """The feature: no --repo, no $REPO, and the PR of the repo you are in."""
+    assert main(["build", "259"]) == 0
+    assert _same(built["REPO"], standing_in)
+
+
+def test_a_subdirectory_resolves_to_the_top_level(no_network, built,
+                                                   standing_in, monkeypatch):
+    """`git show <ref>:<path>` reads root-relative paths wherever it runs, so
+    a run from src/main/java has to review the whole checkout, not fail on
+    every path in it."""
+    deeper = standing_in / "src" / "main" / "java"
+    deeper.mkdir(parents=True)
+    monkeypatch.chdir(deeper)
+    assert main(["build", "259"]) == 0
+    assert _same(built["REPO"], standing_in)
+
+
+def test_a_directory_that_is_no_checkout_is_passed_through(no_network, built,
+                                                            tmp_path,
+                                                            monkeypatch):
+    """Not this tool's directory, and not empty: git then fails naming the
+    path the user actually chose."""
+    from cli import ROOT
+    for name in ("REPO", "OUT"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.chdir(tmp_path)
+    assert main(["build", "259"]) == 0
+    assert _same(built["REPO"], tmp_path)
+    assert not _same(built["REPO"], ROOT)
+
+
+def test_repo_still_wins_over_where_you_stand(no_network, built, standing_in,
+                                              tmp_path):
+    elsewhere = _checkout(tmp_path / "elsewhere")
+    assert main(["build", "259", "--repo", str(elsewhere)]) == 0
+    assert _same(built["REPO"], elsewhere)
+
+
+def test_the_repo_env_var_still_wins_over_where_you_stand(no_network, built,
+                                                           standing_in,
+                                                           tmp_path,
+                                                           monkeypatch):
+    elsewhere = _checkout(tmp_path / "elsewhere")
+    monkeypatch.setenv("REPO", str(elsewhere))
+    assert main(["build", "259"]) == 0
+    assert _same(built["REPO"], elsewhere)
+
+
+def test_gh_is_asked_inside_the_resolved_checkout(built, standing_in,
+                                                   monkeypatch):
+    """`gh` resolves the repository from its working directory. Left to
+    default, it would answer for whatever repo the tool itself sits in -- the
+    wrong PR, resolved without a word."""
+    seen = {}
+    monkeypatch.setattr("cli.resolve_pr",
+                        lambda spec, cwd=None: seen.update(cwd=cwd) or _pull())
+    monkeypatch.setattr("cli.remote_for", lambda *a, **k: ("origin", True))
+    monkeypatch.setattr("cli.fetch_pull", lambda *a, **k: ("B", "H", []))
+    assert main(["build"]) == 0
+    assert seen["cwd"] and _same(seen["cwd"], standing_in)
+
+
+def test_out_defaults_beside_the_passes_when_run_from_this_checkout(
+        no_network, built, standing_in, monkeypatch, tmp_path):
+    """`uv run` in this repository keeps writing ./build, as before."""
+    monkeypatch.setattr("cli.ROOT", tmp_path / "tool")
+    monkeypatch.setattr("cli.FROM_SOURCE", True)
+    assert main(["build", "259"]) == 0
+    assert _same(built["OUT"], tmp_path / "tool" / "build")
+
+
+def test_an_installed_run_writes_neither_into_the_repo_nor_into_the_install(
+        no_network, built, standing_in, monkeypatch, tmp_path):
+    """An installed copy lives in a cache uv may discard, and `build/` inside
+    the repository under review is Gradle's. So it goes to the user's cache
+    directory instead, and the page's path is printed."""
+    monkeypatch.setattr("cli.ROOT", tmp_path / "install")
+    monkeypatch.setattr("cli.FROM_SOURCE", False)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    assert main(["build", "259"]) == 0
+    out = pathlib.Path(built["OUT"])
+    assert out.is_relative_to(tmp_path / "cache" / "pr-rename-review")
+    assert not out.is_relative_to(standing_in)
+    assert not out.is_relative_to(tmp_path / "install")
+
+
+def test_an_installed_run_keys_the_output_by_checkout(monkeypatch, tmp_path):
+    """Two repositories reviewed from one install must not overwrite each
+    other's page -- and same-named checkouts in different places are two
+    repositories, not one."""
+    import cli
+    monkeypatch.setattr("cli.FROM_SOURCE", False)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    a = cli.out_dir(None, "/home/u/one/hsp")
+    b = cli.out_dir(None, "/home/u/two/hsp")
+    assert a != b
+    assert cli.out_dir(None, "/home/u/one/hsp") == a, "not stable across runs"
+
+
+def test_out_still_wins_over_every_default(no_network, built, standing_in,
+                                            monkeypatch, tmp_path):
+    monkeypatch.setattr("cli.FROM_SOURCE", False)
+    assert main(["build", "259", "--out", str(tmp_path / "here")]) == 0
+    assert _same(built["OUT"], tmp_path / "here")
+    monkeypatch.setenv("OUT", str(tmp_path / "env"))
+    assert main(["build", "259"]) == 0
+    assert _same(built["OUT"], tmp_path / "env")

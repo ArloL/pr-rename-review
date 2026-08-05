@@ -15,23 +15,51 @@ original proposal, with the problem analysis and prior-art survey, is
 
 ## Using it
 
-```sh
-export REPO=/path/to/the/checkout          # the repo the PR lives in
+Run it straight from GitHub, in the checkout the PR lives in. Nothing is
+cloned and nothing is installed: `uv` fetches the tool into its own cache,
+builds it there, and runs it.
 
-uv run pr-rename-review serve 259          # build, serve, open a browser
-uv run pr-rename-review build 259          # passes only, no server
-uv run pr-rename-review pairs 259          # disagreement report, then exit
+```sh
+cd /path/to/the/checkout                   # the repo the PR lives in
+
+T="git+https://github.com/ArloL/pr-rename-review"
+uvx --from "$T" pr-rename-review serve 259 # build, serve, open a browser
+uvx --from "$T" pr-rename-review build 259 # passes only, no server
+uvx --from "$T" pr-rename-review pairs 259 # disagreement report, then exit
 ```
 
+`--from` is required because the tool is a git URL rather than a package
+name, and the repository under review is simply the one you are standing in —
+a subdirectory of it works too. Append `@<tag-or-commit>` to the URL to pin a
+version; without one, `uvx` builds the default branch and caches it, so
+`uvx --refresh --from ...` is how you pick up a newer tool.
+
+From a checkout of this tool itself, the same three commands are
+`uv run pr-rename-review serve 259` and so on.
+
 The pull request can be a number, `#259`, or its URL. Leave it out and the PR
-of the branch checked out in `$REPO` is reviewed.
+of the branch you have checked out is reviewed.
+
+`--repo` (or `$REPO`) names a checkout you are *not* standing in, and stays
+the way to review a PR from somewhere else:
+
+```sh
+uvx --from "$T" pr-rename-review --repo /path/to/the/checkout serve 259
+```
+
+The page and the passes' output land in `build/` when the tool runs from its
+own checkout. An installed copy has no checkout to write into — it lives in a
+cache uv is free to discard, and `build/` inside the repository under review
+is Gradle's — so it writes to `~/.cache/pr-rename-review/<checkout>` instead
+(`$XDG_CACHE_HOME` is honoured), keyed so two repositories do not overwrite
+each other's page. Every pass prints the path it wrote; `--out` overrides it.
 
 Base and head come from the PR itself: `gh` reports which branch it targets,
 and `refs/pull/259/head` is fetched into a private ref namespace along with
 that base branch. Nothing is configured, and nothing local has to be checked
 out — a PR from a fork needs no remote of its own.
 
-Flags: `--repo`, `--out`, `--no-build` (serve the existing `build/`),
+Flags: `--repo`, `--out`, `--no-build` (serve the existing output directory),
 `--no-browser`, and `--base`/`--head`, which review two refs directly and
 skip GitHub entirely.
 
@@ -85,7 +113,7 @@ first, so pushing and running again is enough; there is no separate fetch to
 forget. A fetch that fails is reported and the build carries on against the
 refs already on disk.
 
-Each fetch lands in a private namespace in `$REPO`,
+Each fetch lands in a private namespace in the checkout under review,
 `refs/pr-rename-review/<number>/{base,head}`, so reviewing a PR never moves a
 ref you have opinions about. Nothing prunes it: old PRs' refs accumulate.
 `git update-ref -d refs/pr-rename-review/<number>/head` (and `/base`) drops
@@ -144,4 +172,9 @@ deliberate act: point `tests/conftest.py` at the new commit and re-capture
   and leave a truncated output file — which cost a wrong intermediate answer
   during the prototype work.
 - **`gh` resolves the repository from its working directory.** Every `gh` call
-  runs inside `REPO`, not inside this tool.
+  runs inside the checkout under review, not inside this tool. So does every
+  `git` call and every pass: the checkout is resolved once, from `--repo`,
+  `$REPO` or the directory you invoked the tool in, and passed down
+  explicitly. Nothing downstream is left to infer it from its own location —
+  installed by `uvx`, that location is a cache directory and no repository
+  at all.
