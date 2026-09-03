@@ -101,6 +101,13 @@ about, so the page still works: viewed state falls back to `localStorage` and
 a banner says so. A write GitHub rejects reverts the tick rather than leaving
 a file marked reviewed that nobody reviewed.
 
+`V` ticks the open file and jumps to the next unviewed one, which is what
+makes a mispress awkward: the file is marked *and* behind you, gone from the
+unviewed filter. `U` takes back the last tick -- restoring the state on
+GitHub and returning you to the file it was on -- and repeated presses walk
+back through a whole run of them. `reset`, which unmarks everything, clears
+that history rather than becoming several hundred steps of it.
+
 **Comments are not written by this tool.** Each row carries a ↗ link into
 GitHub's own diff; comment there. This is a deliberate non-goal — see the
 spec's "Commenting" section for why, and for what would justify changing it.

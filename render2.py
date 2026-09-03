@@ -189,7 +189,8 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--mono);
 .prog .track span{display:block;height:3px;background:var(--add-ink)}
 .linkbtn{font:inherit;font-size:11px;background:none;border:0;color:var(--ink-3);
      cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px}
-.linkbtn:hover{color:var(--ink)}
+.linkbtn:hover:not(:disabled){color:var(--ink)}
+.linkbtn:disabled{opacity:.4;cursor:default;text-decoration:none}
 .linkbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .acts{display:flex;gap:9px;align-items:center;margin-top:10px;flex-wrap:wrap}
 .btn{font:inherit;font-size:11.5px;padding:5px 12px;border-radius:6px;cursor:pointer;
@@ -267,7 +268,8 @@ HTML = f"""<meta charset="utf-8">
   because content similarity picked the partner rather than the name.
   <br><br>GitHub's per-file <b>Viewed</b> ticks are read and written through your own
   <code>gh</code> login, so a tick here is a tick on the PR and a tick on the PR shows up here.
-  <b>V</b> marks the open file viewed and jumps to the next one; <b>J</b> and <b>K</b> step
+  <b>V</b> marks the open file viewed and jumps to the next one; <b>U</b> takes back the
+  last tick and returns you to the file it was on; <b>J</b> and <b>K</b> step
   through the list. To comment, follow the ↗ link into GitHub's diff — this page does not write
   comments.</p>
   <div class="tally">
@@ -287,6 +289,7 @@ HTML = f"""<meta charset="utf-8">
   </div>
   <div class="prog"><span class="track"><span id="pbar" style="width:0%"></span></span>
     <span id="ptxt">0 of {n_pairs} viewed</span>
+    <button class="linkbtn" id="undo" disabled>undo</button>
     <button class="linkbtn" id="reset">reset</button></div>
   <span id="syncst" class="syncst">Checking GitHub…</span>
   <div class="legend"><i class="d">removed</i><i class="a">added</i></div>
@@ -311,6 +314,37 @@ let viewed=new Set(),synced=false,unknown=[],known=new Set();
 function saveLocal(){{try{{localStorage.setItem(KEY,JSON.stringify([...viewed]));}}catch(e){{}}}}
 function loadLocal(){{try{{viewed=new Set(JSON.parse(localStorage.getItem(KEY)||'[]'));}}catch(e){{}}}}
 function isDone(f){{return viewed.has(f.id);}}
+
+// V ticks the open file and jumps to the next unviewed one, so a mispress
+// leaves the wrong file marked *and* behind you -- off the unviewed filter
+// entirely, which is the hard part to walk back by hand. Every interactive
+// change pushes what it would take to put it back; the reverting write does
+// not, or undo would undo itself.
+let undoStack=[];
+function remember(id,on){{undoStack.push({{id,on}});drawUndo();}}
+function drawUndo(){{
+  const b=document.getElementById('undo');
+  if(!b)return;
+  // The count is the affordance: a key that silently does nothing at the
+  // bottom of the stack reads as a broken key.
+  b.textContent=undoStack.length?`undo ${{undoStack.length}}`:'undo';
+  b.disabled=!undoStack.length;
+}}
+async function undo(){{
+  const e=undoStack.pop();
+  if(!e)return;
+  if(await setViewed(e.id,!e.on,false)){{
+    // Land on the file whose tick was just restored. It is unviewed again,
+    // so it is back under the filter the mispress dropped it out of.
+    const at=D.findIndex(f=>f.id===e.id);
+    if(at>=0)cur=at;
+    draw();toTop();
+  }}else{{
+    // A revert GitHub refused has not happened. Keep the entry so the tick
+    // it describes is still reachable.
+    undoStack.push(e);drawUndo();
+  }}
+}}
 
 function banner(text,warn){{
   const el=document.getElementById('syncst');
@@ -354,17 +388,18 @@ function ghPaths(id){{
   return f&&f.kind==='split'&&known.has(f.oid)?[id,f.oid]:[id];
 }}
 
-async function setViewed(id,on){{
+async function setViewed(id,on,record){{
   const paths=ghPaths(id);
   const had=paths.filter(p=>viewed.has(p));
   paths.forEach(p=>on?viewed.add(p):viewed.delete(p));
   draw();
-  if(!synced||unknown.includes(id)){{saveLocal();return true;}}
+  if(!synced||unknown.includes(id)){{saveLocal();if(record)remember(id,on);return true;}}
   try{{
     const r=await fetch('/api/viewed',{{method:'POST',
       headers:{{'Content-Type':'application/json'}},
       body:JSON.stringify({{paths,viewed:on}})}});
     if(!r.ok)throw new Error(await r.text());
+    if(record)remember(id,on);
     return true;
   }}catch(e){{
     // Revert. A tick that never reached GitHub would mean a file marked
@@ -477,12 +512,12 @@ function drawPane(){{
         <button class="btn" id="mv">${{isDone(f)?'Next unviewed':'Mark viewed &amp; next'}}</button>
         ${{isDone(f)?'<button class="btn ghost" id="unmv">Unmark</button>':''}}
         ${{f.gh?`<a class="btn ghost" href="${{f.gh}}" target="_blank" rel="noopener">Open in GitHub ↗</a>`:''}}
-        <span class="kbd">V marks viewed · J / K step through files · click a right-hand line number to comment on it</span>
+        <span class="kbd">V marks viewed · U undoes the last tick · J / K step through files · click a right-hand line number to comment on it</span>
       </div>
     </div>
     <div class="wrap"><table class="diff"><colgroup><col class="g"><col><col class="g"><col></colgroup><tbody>${{body}}</tbody></table></div>`;
 }}
-function draw(){{drawIndex();drawPane();drawProgress();drawUnknown();bindActions();}}
+function draw(){{drawIndex();drawPane();drawProgress();drawUnknown();drawUndo();bindActions();}}
 function toTop(){{
   document.querySelector('.pane').scrollTop=0;
   // The columns scroll with the document, not internally, so selecting a file
@@ -510,16 +545,17 @@ function bindActions(){{
   const mv=document.getElementById('mv');
   if(mv)mv.onclick=async()=>{{
     if(isDone(D[cur])){{nextTodo();return;}}
-    if(await setViewed(D[cur].id,true))nextTodo();}};
+    if(await setViewed(D[cur].id,true,true))nextTodo();}};
   const un=document.getElementById('unmv');
-  if(un)un.onclick=()=>setViewed(D[cur].id,false);
+  if(un)un.onclick=()=>setViewed(D[cur].id,false,true);
 }}
 document.addEventListener('keydown',e=>{{
   if(e.metaKey||e.ctrlKey||e.altKey)return;
   const k=e.key.toLowerCase();
   if(k==='v'){{e.preventDefault();
-    if(isDone(D[cur])){{setViewed(D[cur].id,false);}}
-    else{{setViewed(D[cur].id,true).then(ok=>{{if(ok)nextTodo();}});}}}}
+    if(isDone(D[cur])){{setViewed(D[cur].id,false,true);}}
+    else{{setViewed(D[cur].id,true,true).then(ok=>{{if(ok)nextTodo();}});}}}}
+  else if(k==='u'){{e.preventDefault();undo();}}
   else if(k==='j'){{e.preventDefault();step(1);}}
   else if(k==='k'){{e.preventDefault();step(-1);}}
 }});
@@ -530,8 +566,13 @@ document.getElementById('reset').onclick=async()=>{{
   btn.disabled=true;
   // Unmarking a pair's new path already unmarked its old path, so skip
   // entries an earlier iteration cleared.
-  for(const id of [...viewed]){{if(viewed.has(id))await setViewed(id,false);}}
+  for(const id of [...viewed]){{if(viewed.has(id))await setViewed(id,false,false);}}
+  // Reset unmarks everything, so walking back into it one file at a time is
+  // not an undo anyone wants -- and the entries would describe ticks that
+  // are already gone.
+  undoStack=[];drawUndo();
   btn.disabled=false;}};
+document.getElementById('undo').onclick=undo;
 ix.addEventListener('click',e=>{{const b=e.target.closest('.item');if(!b)return;cur=+b.dataset.i;draw();toTop();}});
 document.querySelectorAll('.flt').forEach(b=>b.onclick=()=>{{
   flt=b.dataset.f;
