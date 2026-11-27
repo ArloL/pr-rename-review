@@ -102,3 +102,19 @@ def test_a_renamed_file_still_pairs_alongside_them(repo):
     assert list(files) == ["new.txt"]
     assert files["new.txt"]["old"] == "old.txt"
     assert files["new.txt"]["kind"] == "shown"
+
+
+def test_a_binary_file_the_pr_adds_stays_in_the_review(repo):
+    """A .docx fixture is a zip: decoding it as UTF-8 crashed the pass (PR
+    #677 of hsp-backend). It rides along with no rows, flagged binary, so it
+    still gets its Viewed tick."""
+    (repo / "keep.txt").write_text(CONTENT)
+    base = _commit(repo, "base")
+    (repo / "cv.docx").write_bytes(b"PK\x03\x04\x14\x00\x9a\x00\x00\xff")
+    head = _commit(repo, "add a binary file")
+
+    files = _run(repo, base, head)
+    assert files["cv.docx"]["kind"] == "added"
+    assert files["cv.docx"]["bin"] is True
+    assert files["cv.docx"]["raw"] == []
+    assert files["cv.docx"]["raw_w"] == 1, "a changed binary is not a pure move"

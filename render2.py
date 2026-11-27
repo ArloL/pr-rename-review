@@ -48,7 +48,7 @@ for f in files:
         "ght": short(f["gh_target"] or "") if f["gh_target"] else None,
         "ghs": f["gh_score"], "area": f["area"], "prev": f["prev"],
         "gh": pr_url(OWNER, REPO_NAME, PR, f["new"]),
-        "rc": f["raw_c"], "rw": f["raw_w"], "L": f["lines"],
+        "rc": f["raw_c"], "rw": f["raw_w"], "L": f["lines"], "bin": f.get("bin", False),
         "R": [[r[0], r[1], r[2], r[3], r[4]] for r in f["raw"]]})
 
 DATA = json.dumps(compact, separators=(",", ":"))
@@ -507,7 +507,7 @@ function drawPane(){{
         : `<span class="old">${{f.on}}</span><span class="arrow">→</span><span class="new">${{f.nn}}</span>`}}
       <div class="stat">${{f.kind==='modified'||f.kind==='added'||f.kind==='deleted'?f.np:`${{f.op}} → ${{f.np}}`}}</div>
       <div class="stat">${{f.L}} lines · ${{f.rc}} changed lines · ${{f.rw}} highlighted tokens</div>
-      ${{how}}
+      ${{f.bin?`<div class="flag"><b>Binary</b> — no text diff to show; open it in GitHub.</div>`:how}}
       <div class="acts">
         <button class="btn" id="mv">${{isDone(f)?'Next unviewed':'Mark viewed &amp; next'}}</button>
         ${{isDone(f)?'<button class="btn ghost" id="unmv">Unmark</button>':''}}
