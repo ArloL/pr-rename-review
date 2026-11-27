@@ -18,7 +18,17 @@ TOK = re.compile(r"[A-Za-z0-9_]+|\s+|[^\sA-Za-z0-9_]")
 
 def show(ref, p):
     return subprocess.run(["git", "show", f"{ref}:{p}"], capture_output=True,
-                          text=True, cwd=REPO).stdout
+                          cwd=REPO).stdout
+
+
+def text(blob):
+    """None for a binary blob: a NUL in the first 8000 bytes, as git decides."""
+    if b"\0" in blob[:8000]:
+        return None
+    try:
+        return blob.decode()
+    except UnicodeDecodeError:
+        return None
 
 
 def esc(s):
@@ -107,8 +117,15 @@ scope = json.load(open(OUT / "scope.json"))
 files = []
 for r in scope:
     old, new = r["old"], r["new"]
-    o, n = show(BASE, old), show(HEAD, new)
-    raw_rows, raw_c, raw_w = build(o, n)
+    ob, nb = show(BASE, old), show(HEAD, new)
+    o, n = text(ob), text(nb)
+    binary = o is None or n is None
+    if binary:
+        # No word diff; a nonzero count keeps a changed binary from passing
+        # as a pure move.
+        raw_rows, raw_c, raw_w, n = [], 0, int(ob != nb), ""
+    else:
+        raw_rows, raw_c, raw_w = build(o, n)
     area = ("test" if new.startswith("src/test/java") else
             "fixture" if "/resources/" in new else
             "doc" if new.startswith("docs/") else "main")
@@ -119,7 +136,7 @@ for r in scope:
         # `prev` marked files reviewed elsewhere, fed by a pairs.tsv no pass
         # has written since the prototype was split. Always false; the key
         # stays because render2.py still reads it.
-        area=area, prev=False,
+        area=area, prev=False, bin=binary,
         raw=raw_rows, raw_c=raw_c, raw_w=raw_w, lines=len(n.splitlines())))
 
 files.sort(key=lambda f: -f["raw_w"])
